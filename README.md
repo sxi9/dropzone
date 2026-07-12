@@ -7,6 +7,8 @@
 Drop a file. Paste some text. Watch it appear on your phone, your laptop, your tablet — instantly.
 No cloud. No account. No app to install. Just a browser and your home Wi-Fi.
 
+*A self-hosted, cross-platform file-sharing app for your local network — a privacy-first, open-source alternative to AirDrop, Nearby Share, Snapdrop, and LocalSend. Runs on any Linux box, Raspberry Pi, or home server.*
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-teal.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/Flask-3.x-black.svg)](https://flask.palletsprojects.com/)
