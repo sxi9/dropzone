@@ -21,21 +21,13 @@ No cloud. No account. No app to install. Just a browser and your home Wi-Fi.
 
 <div align="center">
 
-**The drop zone** — shared files, photos, and text in one live feed
-
-<img src="docs/screenshot-feed.png" alt="Dropzone shared items feed" width="820">
-
-<br>
-
-**Activity** — a live log of who joined and what they shared
-
-<img src="docs/screenshot-screen.png" alt="Dropzone activity feed" width="820">
-
-<br>
-
-**Chat** — a lightweight group chat across every device on the network
-
-<img src="docs/screenshot-chat.png" alt="Dropzone cross-device chat" width="820">
+<table>
+<tr>
+<td width="33%" align="center"><img src="docs/screenshot-feed.png" alt="Dropzone shared items feed"><br><sub><b>The drop zone</b><br>shared files, photos & text</sub></td>
+<td width="33%" align="center"><img src="docs/screenshot-screen.png" alt="Dropzone activity feed"><br><sub><b>Activity</b><br>who joined & what they shared</sub></td>
+<td width="33%" align="center"><img src="docs/screenshot-chat.png" alt="Dropzone cross-device chat"><br><sub><b>Chat</b><br>group chat across devices</sub></td>
+</tr>
+</table>
 
 </div>
 
