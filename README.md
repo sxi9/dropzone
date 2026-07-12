@@ -21,16 +21,23 @@ No cloud. No account. No app to install. Just a browser and your home Wi-Fi.
 
 <div align="center">
 
-*Add your own screenshots here once it's running — this is what makes a repo page convert.*
+**The drop zone** — shared files, photos, and text in one live feed
 
-| Drop zone | Screen viewer | Chat & activity |
-|:---:|:---:|:---:|
-| `docs/screenshot-feed.png` | `docs/screenshot-screen.png` | `docs/screenshot-chat.png` |
+<img src="docs/screenshot-feed.png" alt="Dropzone shared items feed" width="820">
+
+<br>
+
+**Activity** — a live log of who joined and what they shared
+
+<img src="docs/screenshot-screen.png" alt="Dropzone activity feed" width="820">
+
+<br>
+
+**Chat** — a lightweight group chat across every device on the network
+
+<img src="docs/screenshot-chat.png" alt="Dropzone cross-device chat" width="820">
 
 </div>
-
-> **Tip:** create a `docs/` folder, drop your PNGs in, and swap the paths above.
-> A quick way to get a clean shot: open Dropzone in a desktop browser, resize the window to ~1280px wide, and use your OS screenshot tool. For the phone view, use your browser's device toolbar (F12 → toggle device toolbar) rather than a photo of your screen.
 
 ---
 
