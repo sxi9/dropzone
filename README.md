@@ -73,7 +73,7 @@ It was built from scratch, iteration by iteration, into a genuinely full-feature
 Dropzone runs on any always-on Linux machine — an old laptop, a Raspberry Pi, a home server.
 
 ```bash
-git clone https://github.com/yourusername/dropzone.git
+git clone https://github.com/sxi9/dropzone.git
 cd dropzone
 
 python3 -m venv venv
