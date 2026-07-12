@@ -17,6 +17,23 @@ No cloud. No account. No app to install. Just a browser and your home Wi-Fi.
 
 ---
 
+## Screenshots
+
+<div align="center">
+
+*Add your own screenshots here once it's running — this is what makes a repo page convert.*
+
+| Drop zone | Screen viewer | Chat & activity |
+|:---:|:---:|:---:|
+| `docs/screenshot-feed.png` | `docs/screenshot-screen.png` | `docs/screenshot-chat.png` |
+
+</div>
+
+> **Tip:** create a `docs/` folder, drop your PNGs in, and swap the paths above.
+> A quick way to get a clean shot: open Dropzone in a desktop browser, resize the window to ~1280px wide, and use your OS screenshot tool. For the phone view, use your browser's device toolbar (F12 → toggle device toolbar) rather than a photo of your screen.
+
+---
+
 ## Why Dropzone
 
 You have a laptop, a phone, maybe a tablet, and they never talk to each other. AirDrop only works between Apple devices. Google's "Nearby Share" doesn't reach your iPhone. Emailing yourself a file feels like it's 2009. Cloud drives mean waiting on an upload *and* a download, and handing your files to somebody else's server in the process.
@@ -191,9 +208,28 @@ Have an idea? Open an issue — this project grows from exactly that kind of fee
 
 ---
 
+---
+
+## Repository contents
+
+| File | Purpose |
+|---|---|
+| `app.py` | The entire backend — routes, database, VNC bridge |
+| `templates/index.html` | The full UI: styles, markup, and frontend logic |
+| `templates/login.html` | PIN entry screen |
+| `templates/screen.html` | Full-page remote screen viewer |
+| `static/novnc/` | Vendored noVNC client (screen viewer dependency) |
+| `dropzone.service` | systemd unit to run Dropzone 24/7 |
+| `x11vnc.service` | systemd unit to run the optional screen server 24/7 |
+| `.env.example` | Every configuration variable, documented |
+| `CHANGELOG.md` | Version history from MVP to the current release |
+| `CONTRIBUTING.md` | How to set up, structure, and submit changes |
+
+---
+
 ## Contributing
 
-Pull requests are welcome. For larger changes, please open an issue first to discuss what you'd like to change.
+Pull requests are welcome. See **[CONTRIBUTING.md](CONTRIBUTING.md)** for the full workflow, project structure, and coding conventions. Short version:
 
 1. Fork the repo
 2. Create your feature branch (`git checkout -b feature/amazing-thing`)
