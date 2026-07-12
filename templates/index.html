@@ -1,0 +1,986 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Dropzone</title>
+<style>
+  :root{
+    --canvas:#dfe7e4;
+    --paper:rgba(255,255,255,.5); --paper-2:rgba(255,255,255,.34); --paper-solid:#FCFBF8;
+    --ink:#12273a; --ink-soft:#52647a; --line:rgba(255,255,255,.62); --line-soft:rgba(110,135,150,.2);
+    --signal:#0C8A7C; --signal-deep:#0B7D72; --pop:#E8633A;
+    --glass:saturate(165%) blur(22px);
+    --shadow:0 22px 54px -30px rgba(16,38,58,.55);
+  }
+  html[data-theme="dark"]{
+    --canvas:#080e16;
+    --paper:rgba(38,54,72,.46); --paper-2:rgba(70,92,114,.3); --paper-solid:#1b2836;
+    --ink:#EAF1F5; --ink-soft:#9eb0bf; --line:rgba(255,255,255,.14); --line-soft:rgba(255,255,255,.09);
+    --signal:#2ad6c3; --signal-deep:#19BCAB; --pop:#F0744A;
+    --shadow:0 26px 64px -28px rgba(0,0,0,.8);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--canvas);color:var(--ink);min-height:100dvh;position:relative;overflow-x:hidden;
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+  body::before{content:"";position:fixed;inset:-18%;z-index:-1;pointer-events:none;
+    background:
+      radial-gradient(36vw 36vw at 16% 20%, color-mix(in srgb,var(--signal) 62%,transparent), transparent 60%),
+      radial-gradient(32vw 32vw at 84% 14%, color-mix(in srgb,var(--pop) 55%,transparent), transparent 60%),
+      radial-gradient(42vw 42vw at 76% 86%, color-mix(in srgb,var(--signal) 48%,transparent), transparent 62%),
+      radial-gradient(30vw 30vw at 10% 88%, color-mix(in srgb,var(--pop) 42%,transparent), transparent 60%);
+    filter:blur(32px) saturate(125%);animation:dzDrift 26s ease-in-out infinite alternate}
+  button,input,textarea{font-family:inherit}
+  ::selection{background:color-mix(in srgb,var(--signal) 30%,transparent)}
+  .dz-scroll::-webkit-scrollbar{width:8px}
+  .dz-scroll::-webkit-scrollbar-thumb{background:var(--line-soft);border-radius:8px}
+  @keyframes dzDrift{0%{transform:translate(0,0) scale(1)}100%{transform:translate(-4%,3%) scale(1.1)}}
+  @keyframes dzRise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+  @keyframes dzSlide{from{opacity:0;transform:translateX(14px)}to{opacity:1;transform:none}}
+  @keyframes dzSonar{0%{transform:scale(.5);opacity:.5}100%{transform:scale(1.85);opacity:0}}
+  @keyframes dzGlow{0%{opacity:.95}100%{opacity:0}}
+  @keyframes dzLive{0%,100%{opacity:1}50%{opacity:.3}}
+  @keyframes dzPop{0%{transform:scale(.3);opacity:0}60%{transform:scale(1.12)}100%{transform:scale(1);opacity:1}}
+  @media(max-width:980px){#dz-grid{grid-template-columns:1fr!important}#dz-rail{position:static!important}}
+  @media(prefers-reduced-motion:reduce){*{animation:none!important}}
+
+  html[data-slim="1"] body::before{animation:none;opacity:.28}
+</style>
+</head>
+<body>
+<div id="dz-root"></div>
+<template id="dz-tpl">
+<div style="max-width:1240px;margin:0 auto;padding:0 20px 80px">
+
+  <header style="display:flex;align-items:center;gap:14px;padding:22px 2px 18px;flex-wrap:wrap">
+    <div style="display:flex;align-items:center;gap:9px">
+      <span style="width:13px;height:13px;border-radius:50%;background:var(--pop);box-shadow:0 0 14px 1px color-mix(in srgb,var(--pop) 70%,transparent),0 0 0 4px color-mix(in srgb,var(--pop) 22%,transparent)"></span>
+      <b style="font-family:ui-monospace,Menlo,monospace;font-weight:700;letter-spacing:.24em;text-transform:uppercase;font-size:15px">Dropzone</b>
+    </div>
+    <span style="color:var(--ink-soft);font-size:12.5px;letter-spacing:.02em">{{ netTag }}</span>
+    <span style="flex:1 1 auto"></span>
+    <span style="display:inline-flex;align-items:center;gap:8px;background:var(--paper);backdrop-filter:var(--glass);-webkit-backdrop-filter:var(--glass);border:1px solid var(--line);padding:7px 13px;border-radius:999px;font-size:13px;box-shadow:var(--shadow)">
+      <span style="width:8px;height:8px;border-radius:50%;background:var(--signal);box-shadow:0 0 8px 1px color-mix(in srgb,var(--signal) 70%,transparent);animation:dzLive 1.8s ease-in-out infinite"></span>
+      <b style="color:var(--signal)">{{ deviceCount }}</b> devices
+    </span>
+    <button onclick="{{ openQR }}" style="display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);background:var(--paper);backdrop-filter:var(--glass);-webkit-backdrop-filter:var(--glass);color:var(--ink);font-size:13px;padding:8px 12px;border-radius:999px;cursor:pointer;line-height:1;box-shadow:var(--shadow)" style-hover="border-color:var(--signal);color:var(--signal)">
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"></rect><rect x="14" y="3" width="7" height="7" rx="1"></rect><rect x="3" y="14" width="7" height="7" rx="1"></rect><path d="M14 14h3v3M21 14v7M17 21h4"></path></svg>
+      <span>Add device</span>
+    </button>
+    <button onclick="{{ toggleTheme }}" title="Toggle theme" style="display:inline-flex;align-items:center;border:1px solid var(--line);background:var(--paper);backdrop-filter:var(--glass);-webkit-backdrop-filter:var(--glass);color:var(--ink);padding:8px 11px;border-radius:999px;cursor:pointer;box-shadow:var(--shadow)" style-hover="border-color:var(--signal);color:var(--signal)">
+      {{ themeIcon }}
+    </button>
+    <button onclick="{{ doLogout }}" title="Lock" style="border:1px solid var(--line);background:var(--paper);backdrop-filter:var(--glass);-webkit-backdrop-filter:var(--glass);color:var(--ink);font-size:13px;padding:8px 14px;border-radius:999px;cursor:pointer;line-height:1;box-shadow:var(--shadow)" style-hover="border-color:var(--signal);color:var(--signal)">Lock</button>
+  </header>
+
+  <div id="dz-grid" style="display:grid;grid-template-columns:minmax(0,1fr) 372px;gap:28px;align-items:start">
+
+    <main style="min-width:0">
+      <div onclick="{{ onSlotClick }}" ondragover="{{ onDragOver }}" ondragleave="{{ onDragLeave }}" ondrop="{{ onDrop }}" tabindex="0" role="button" style="position:relative;background:var(--paper);backdrop-filter:var(--glass);-webkit-backdrop-filter:var(--glass);border:2px dashed var(--line);border-radius:24px;padding:42px 24px;text-align:center;cursor:pointer;transition:border-color .18s,box-shadow .18s;overflow:hidden;box-shadow:var(--shadow)">
+        <sc-if value="{{ isDragging }}">
+          <div style="position:absolute;inset:6px;border:2px solid var(--signal);border-radius:18px;background:color-mix(in srgb,var(--signal) 12%,transparent);pointer-events:none"></div>
+        </sc-if>
+        <div style="position:relative">
+          <div style="width:50px;height:50px;margin:0 auto 14px;border-radius:15px;display:grid;place-items:center;background:color-mix(in srgb,var(--signal) 18%,transparent);color:var(--signal);box-shadow:0 8px 22px -10px color-mix(in srgb,var(--signal) 80%,transparent)">
+            <svg viewBox="0 0 24 24" width="25" height="25" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M12 4l-5 5M12 4l5 5"></path><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"></path></svg>
+          </div>
+          <h2 style="margin:0 0 4px;font-size:19px;letter-spacing:-.01em">Drop files or folders to share</h2>
+          <p style="color:var(--ink-soft);font-size:13.5px;margin:0">Drag them in, <span style="color:var(--signal);font-weight:600;text-decoration:underline;text-underline-offset:3px">browse</span>, or paste a screenshot · up to 2048 MB each</p>
+        </div>
+        <input type="file" ref="{{ setFileInput }}" onchange="{{ onFileChange }}" multiple="" hidden="hidden">
+      </div>
+
+      <div style="margin-top:14px;background:var(--paper);backdrop-filter:var(--glass);-webkit-backdrop-filter:var(--glass);border:1px solid var(--line);border-radius:18px;padding:12px;box-shadow:var(--shadow)">
+        <div style="display:flex;gap:10px;align-items:flex-end">
+          <textarea oninput="{{ onNoteInput }}" data-keep="note" value="{{ noteDraft }}" rows="1" placeholder="Paste text or a link to share across devices…" style="flex:1;border:0;background:transparent;color:var(--ink);resize:none;font-size:15px;line-height:1.5;min-height:24px;max-height:160px;padding:6px 4px;outline:none"></textarea>
+          <button onclick="{{ toggleRecord }}" title="Record a voice memo" style="{{ micStyle }}">{{ micIcon }}</button>
+          <button onclick="{{ shareNote }}" disabled="{{ noteDisabled }}" style="border:0;background:var(--ink);color:var(--canvas);font-weight:600;font-size:14px;padding:11px 17px;border-radius:12px;cursor:pointer;white-space:nowrap" style-hover="background:var(--signal)">Share text</button>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap">
+          <button onclick="{{ toggleBurn }}" style="{{ burnChip }}">{{ burnIcon }} Burn after read</button>
+          <button onclick="{{ toggleExpire }}" style="{{ expireChip }}">{{ clockLabel }}</button>
+          <sc-if value="{{ showFetchUrl }}">
+            <button onclick="{{ fetchUrl }}" style="display:inline-flex;align-items:center;gap:6px;border:1px solid var(--signal);background:color-mix(in srgb,var(--signal) 14%,transparent);color:var(--signal);font-size:12px;padding:5px 11px;border-radius:999px;cursor:pointer">{{ globeIcon }} Fetch this URL to the server</button>
+          </sc-if>
+          <span style="flex:1 1 auto"></span>
+          <span style="display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--ink-soft)">Share with
+            <select ref="{{ initTargetSelect }}" style="border:1px solid var(--line);background:var(--paper-2);color:var(--ink);font-size:12.5px;padding:5px 9px;border-radius:999px;outline:none;cursor:pointer"></select>
+          </span>
+        </div>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:10px;margin:26px 2px 14px;flex-wrap:wrap">
+        <span style="font-family:ui-monospace,Menlo,monospace;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-soft)">shared · <b style="color:var(--signal)">{{ count }}</b> items</span>
+        <span style="flex:1 1 auto"></span>
+        <div style="display:flex;gap:4px;background:var(--paper-2);backdrop-filter:var(--glass);-webkit-backdrop-filter:var(--glass);border:1px solid var(--line);padding:4px;border-radius:999px">
+          <button onclick="{{ filterAll }}" style="{{ pillAll }}">All</button>
+          <button onclick="{{ filterFile }}" style="{{ pillFile }}">Files</button>
+          <button onclick="{{ filterImage }}" style="{{ pillImage }}">Photos</button>
+          <button onclick="{{ filterNote }}" style="{{ pillNote }}">Text</button>
+        </div>
+        <button onclick="{{ toggleSelecting }}" style="border:1px solid var(--line);background:var(--paper);backdrop-filter:var(--glass);-webkit-backdrop-filter:var(--glass);color:var(--ink);font-size:13px;padding:8px 14px;border-radius:999px;cursor:pointer" style-hover="border-color:var(--signal);color:var(--signal)">{{ selectLabel }}</button>
+        <div style="flex:1;min-width:140px;display:flex;align-items:center;gap:8px;background:var(--paper);backdrop-filter:var(--glass);-webkit-backdrop-filter:var(--glass);border:1px solid var(--line);border-radius:999px;padding:8px 14px" style-focus-within="border-color:var(--signal)">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--ink-soft)" stroke-width="2" style="flex:none"><circle cx="11" cy="11" r="7"></circle><path d="m21 21-4.3-4.3"></path></svg>
+          <input oninput="{{ onSearch }}" data-keep="search" value="{{ query }}" placeholder="Search" style="border:0;background:transparent;color:var(--ink);font-size:14px;width:100%;outline:none">
+        </div>
+      </div>
+
+      <sc-if value="{{ hasLabels }}">
+        <div style="display:flex;align-items:center;gap:7px;margin:0 2px 14px;flex-wrap:wrap">
+          <span style="font-family:ui-monospace,Menlo,monospace;font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft)">labels</span>
+          <sc-for list="{{ labels }}" as="l">
+            <button onclick="{{ l.clickHandler }}" style="{{ l.style }}">{{ l.name }} · {{ l.count }}</button>
+          </sc-for>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ selecting }}">
+        <div style="display:flex;align-items:center;gap:10px;margin:0 2px 14px;padding:10px 14px;background:color-mix(in srgb,var(--signal) 10%,var(--paper));border:1px solid color-mix(in srgb,var(--signal) 40%,transparent);border-radius:14px;animation:dzRise .2s ease both">
+          <b style="font-size:13px;color:var(--signal)">{{ selCountText }}</b>
+          <span style="flex:1 1 auto"></span>
+          <button onclick="{{ bulkLabel }}" style="display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--paper);color:var(--ink);font-size:12.5px;padding:7px 13px;border-radius:999px;cursor:pointer" style-hover="border-color:var(--signal);color:var(--signal)">Label…</button>
+          <button onclick="{{ bulkZip }}" style="display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--paper);color:var(--ink);font-size:12.5px;padding:7px 13px;border-radius:999px;cursor:pointer" style-hover="border-color:var(--signal);color:var(--signal)">Download as zip</button>
+          <button onclick="{{ bulkDelete }}" disabled="{{ anySelected }}" style="display:inline-flex;align-items:center;gap:6px;border:1px solid color-mix(in srgb,var(--pop) 50%,transparent);background:color-mix(in srgb,var(--pop) 12%,transparent);color:var(--pop);font-size:12.5px;padding:7px 13px;border-radius:999px;cursor:pointer">Delete selected</button>
+        </div>
+      </sc-if>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px">
+        <sc-for list="{{ feedItems }}" as="it">
+          <div onclick="{{ it.openHandler }}" style="position:relative;background:var(--paper);backdrop-filter:var(--glass);-webkit-backdrop-filter:var(--glass);border:1px solid var(--line);border-radius:18px;overflow:hidden;display:flex;flex-direction:column;box-shadow:var(--shadow);animation:dzRise .26s ease both;cursor:pointer">
+
+            <sc-if value="{{ it.selecting }}">
+              <button onclick="{{ it.selectHandler }}" title="Select" style="position:absolute;top:8px;left:8px;z-index:3;width:24px;height:24px;border-radius:8px;border:1.5px solid var(--signal);background:{{ it.checkBg }};color:#fff;cursor:pointer;display:grid;place-items:center">
+                <sc-if value="{{ it.checked }}"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 13l4 4L19 7"></path></svg></sc-if>
+              </button>
+            </sc-if>
+
+            <button onclick="{{ it.pinHandler }}" title="Pin" style="position:absolute;top:8px;right:8px;z-index:3;width:26px;height:26px;border-radius:9px;border:0;background:color-mix(in srgb,var(--paper-solid) 78%,transparent);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);color:{{ it.pinColor }};cursor:pointer;display:grid;place-items:center" style-hover="color:var(--pop)">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 17v5"></path><path d="M8 3h8l-1 7 3 3H6l3-3z"></path></svg>
+            </button>
+
+            <sc-if value="{{ it.forYou }}">
+              <span style="position:absolute;top:8px;left:8px;z-index:2;font-size:9.5px;font-family:ui-monospace,Menlo,monospace;letter-spacing:.08em;text-transform:uppercase;color:#fff;background:var(--pop);padding:3px 8px;border-radius:999px;box-shadow:0 4px 12px -4px var(--pop)">for you</span>
+            </sc-if>
+
+            <sc-if value="{{ it.isBurn }}">
+              <div style="padding:22px 14px 14px;flex:1;text-align:center">
+                <div style="width:40px;height:40px;margin:0 auto 10px;border-radius:12px;display:grid;place-items:center;background:color-mix(in srgb,var(--pop) 16%,transparent);color:var(--pop)">
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 2c1 4-4 5-4 10a4 4 0 0 0 8 0c0-2-1-3-1-3s3 1 3 4a6 6 0 0 1-12 0C6 7 11 6 12 2z"></path></svg>
+                </div>
+                <div style="font-size:13.5px;font-weight:600">Secret note</div>
+                <div style="font-size:11.5px;color:var(--ink-soft);margin-top:2px">Deletes itself after reading</div>
+                <button onclick="{{ it.revealHandler }}" style="margin-top:12px;border:1px solid color-mix(in srgb,var(--pop) 50%,transparent);background:color-mix(in srgb,var(--pop) 12%,transparent);color:var(--pop);font-size:12.5px;font-weight:600;padding:7px 16px;border-radius:999px;cursor:pointer">Reveal once</button>
+              </div>
+              <div style="padding:10px 14px;display:flex;align-items:center;gap:8px;border-top:1px solid var(--line-soft)">
+                <span style="font-family:ui-monospace,Menlo,monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--pop);padding:2px 7px;border:1px solid color-mix(in srgb,var(--pop) 40%,transparent);border-radius:999px">burn</span>
+                <span style="flex:1"></span>
+                <span style="font-size:11.5px;color:var(--ink-soft)">{{ it.whenText }}</span>
+                <button onclick="{{ it.delHandler }}" title="Delete" style="border:0;background:transparent;color:var(--ink-soft);cursor:pointer;padding:5px;border-radius:8px;display:inline-flex" style-hover="color:var(--pop);background:var(--paper-2)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"></path></svg></button>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ it.isNote }}">
+              <div style="padding:26px 14px 6px;flex:1">
+                <p style="margin:0;font-size:14px;line-height:1.55;white-space:pre-wrap;word-break:break-word;display:-webkit-box;-webkit-line-clamp:7;-webkit-box-orient:vertical;overflow:hidden">{{ it.content }}</p>
+              </div>
+              <div style="padding:10px 14px;display:flex;align-items:center;gap:8px;border-top:1px solid var(--line-soft)">
+                <span style="font-family:ui-monospace,Menlo,monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft);padding:2px 7px;border:1px solid var(--line-soft);border-radius:999px">text</span>
+                <sc-if value="{{ it.hasLabel }}"><span style="font-family:ui-monospace,Menlo,monospace;font-size:10px;letter-spacing:.06em;color:var(--signal);padding:2px 7px;border:1px solid color-mix(in srgb,var(--signal) 40%,transparent);border-radius:999px">{{ it.label }}</span></sc-if>
+                <span style="flex:1"></span>
+                <span style="font-size:11.5px;color:var(--ink-soft)">{{ it.whenText }}</span>
+                <button onclick="{{ it.copyHandler }}" title="Copy" style="border:0;background:transparent;color:var(--ink-soft);cursor:pointer;padding:5px;border-radius:8px;display:inline-flex" style-hover="color:var(--signal);background:var(--paper-2)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"></rect><path d="M5 15V5a2 2 0 0 1 2-2h10"></path></svg></button>
+                <button onclick="{{ it.delHandler }}" title="Delete" style="border:0;background:transparent;color:var(--ink-soft);cursor:pointer;padding:5px;border-radius:8px;display:inline-flex" style-hover="color:var(--pop);background:var(--paper-2)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"></path></svg></button>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ it.isFile }}">
+              <div style="aspect-ratio:16/11;background:var(--paper-2);display:grid;place-items:center;overflow:hidden">
+                <sc-if value="{{ it.isImage }}">{{ it.thumbEl }}</sc-if>
+                <sc-if value="{{ it.isFile2 }}">
+                  <span style="font-family:ui-monospace,Menlo,monospace;font-size:13px;font-weight:700;letter-spacing:.08em;color:var(--signal);background:color-mix(in srgb,var(--signal) 16%,transparent);padding:7px 11px;border-radius:9px">{{ it.glyph }}</span>
+                </sc-if>
+              </div>
+              <div style="padding:10px 14px;display:flex;align-items:center;gap:6px;border-top:1px solid var(--line-soft)">
+                <span style="flex:1;min-width:0">
+                  <span style="display:block;font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{ it.name }}">{{ it.name }}</span>
+                  <span style="font-size:11.5px;color:var(--ink-soft)">{{ it.sizeText }} · {{ it.whenText }}<sc-if value="{{ it.hasLabel }}"> · <span style="color:var(--signal)">{{ it.label }}</span></sc-if></span>
+                </span>
+                <sc-if value="{{ it.hasShare }}">
+                  <button onclick="{{ it.shareHandler }}" title="Copy share link" style="border:0;background:transparent;color:var(--ink-soft);cursor:pointer;padding:5px;border-radius:8px;display:inline-flex" style-hover="color:var(--signal);background:var(--paper-2)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"></path><path d="M16 6l-4-4-4 4"></path><path d="M12 2v13"></path></svg></button>
+                </sc-if>
+                <a href="{{ it.downHref }}" onclick="{{ it.stop }}" title="Download" style="border:0;background:transparent;color:var(--ink-soft);cursor:pointer;padding:5px;border-radius:8px;display:inline-flex" style-hover="color:var(--signal);background:var(--paper-2)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 4v12M7 11l5 5 5-5M5 20h14"></path></svg></a>
+                <button onclick="{{ it.delHandler }}" title="Delete" style="border:0;background:transparent;color:var(--ink-soft);cursor:pointer;padding:5px;border-radius:8px;display:inline-flex" style-hover="color:var(--pop);background:var(--paper-2)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"></path></svg></button>
+              </div>
+            </sc-if>
+          </div>
+        </sc-for>
+      </div>
+
+      <sc-if value="{{ showEmpty }}">
+        <div style="text-align:center;padding:56px 20px;color:var(--ink-soft)">
+          <div style="font-size:40px;margin-bottom:8px;opacity:.5">◇</div>
+          <div>Nothing shared yet. Drop a file or paste some text to start.</div>
+        </div>
+      </sc-if>
+
+      <footer style="margin:30px 2px 0;display:flex;align-items:center;gap:12px;flex-wrap:wrap;color:var(--ink-soft);font-size:12.5px">
+        <span>Reach this page from any device on your network at</span>
+        <span style="font-family:ui-monospace,Menlo,monospace;color:var(--ink)">{{ hostAddr }}</span>
+        <span style="flex:1 1 auto"></span>
+        <button onclick="{{ openStorage }}" style="border:0;background:transparent;color:var(--ink-soft);font-size:12.5px;cursor:pointer;text-decoration:underline;text-underline-offset:3px" style-hover="color:var(--signal)">{{ storageText }}</button>
+      </footer>
+    </main>
+
+    <aside id="dz-rail" style="position:sticky;top:18px;background:var(--paper);backdrop-filter:var(--glass);-webkit-backdrop-filter:var(--glass);border:1px solid var(--line);border-radius:22px;overflow:hidden;box-shadow:var(--shadow)">
+      <div style="padding:16px 16px 12px;border-bottom:1px solid var(--line-soft)">
+        <div style="display:flex;align-items:center;gap:9px">
+          <span style="width:9px;height:9px;border-radius:50%;background:var(--signal);box-shadow:0 0 10px 1px color-mix(in srgb,var(--signal) 70%,transparent),0 0 0 4px color-mix(in srgb,var(--signal) 20%,transparent);animation:dzLive 1.8s ease-in-out infinite"></span>
+          <b style="font-size:15px">On this network</b>
+        </div>
+        <div style="margin-top:4px;color:var(--ink-soft);font-size:12.5px">{{ deviceCount }} devices · {{ activeCount }} active now</div>
+        <div onclick="{{ openStorage }}" title="Storage details" style="margin-top:10px;height:5px;border-radius:99px;background:var(--paper-2);overflow:hidden;cursor:pointer"><div style="height:100%;width:{{ storagePct }}%;background:linear-gradient(90deg,var(--signal),var(--pop));border-radius:99px"></div></div>
+        <div style="display:flex;gap:4px;background:var(--paper-2);border:1px solid var(--line-soft);padding:4px;border-radius:999px;margin-top:14px">
+          <button onclick="{{ tabDevices }}" style="{{ tabDev }}">Devices</button>
+          <button onclick="{{ tabActivity }}" style="{{ tabAct }}">Activity</button>
+          <button onclick="{{ tabChat }}" style="{{ tabChatStyle }}">Chat</button>
+          <button onclick="{{ tabScreen }}" style="{{ tabScr }}">Screen</button>
+        </div>
+      </div>
+
+      <sc-if value="{{ isDevices }}">
+        <div class="dz-scroll" style="max-height:460px;overflow:auto;padding:8px">
+          <sc-for list="{{ devices }}" as="d">
+            <div style="display:flex;align-items:center;gap:12px;padding:11px 10px;border-radius:13px;animation:dzSlide .25s ease both" style-hover="background:var(--paper-2)">
+              <span style="width:38px;height:38px;border-radius:12px;display:grid;place-items:center;background:var(--paper-2);border:1px solid var(--line-soft);color:var(--ink);flex:none">{{ d.iconEl }}</span>
+              <span style="flex:1;min-width:0">
+                <sc-if value="{{ d.renaming }}">
+                  <input oninput="{{ onRenameInput }}" onkeydown="{{ d.renameKey }}" onblur="{{ d.renameCommit }}" data-keep="rename" value="{{ renameDraft }}" style="width:100%;border:1px solid var(--signal);background:var(--paper-2);color:var(--ink);font-size:13px;padding:5px 8px;border-radius:8px;outline:none">
+                </sc-if>
+                <sc-if value="{{ d.notRenaming }}">
+                  <span onclick="{{ d.renameHandler }}" title="Click to rename" style="display:flex;align-items:center;gap:7px;cursor:text">
+                    <span style="font-size:13.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ d.name }}</span>
+                    <sc-if value="{{ d.you }}"><span style="font-size:9.5px;font-family:ui-monospace,Menlo,monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--signal);border:1px solid color-mix(in srgb,var(--signal) 40%,transparent);padding:1px 5px;border-radius:999px">you</span></sc-if>
+                  </span>
+                </sc-if>
+                <span style="display:block;font-size:11.5px;color:var(--ink-soft);font-family:ui-monospace,Menlo,monospace">{{ d.ip }}</span>
+              </span>
+              <span style="display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--ink-soft)">
+                <span style="width:7px;height:7px;border-radius:50%;background:{{ d.dotColor }}"></span>{{ d.statusText }}
+              </span>
+            </div>
+          </sc-for>
+          <button onclick="{{ openQR }}" style="width:100%;margin-top:6px;display:flex;align-items:center;justify-content:center;gap:8px;border:1px dashed var(--line);background:transparent;color:var(--ink-soft);font-size:13px;padding:13px;border-radius:13px;cursor:pointer" style-hover="border-color:var(--signal);color:var(--signal)">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"></path></svg> Connect another device
+          </button>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isActivity }}">
+        <div style="padding:10px 16px 0;font-family:ui-monospace,Menlo,monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft)">Today:
+          <button onclick="{{ digFiles }}" style="border:0;background:transparent;color:var(--signal);font:inherit;cursor:pointer;padding:0;text-decoration:underline;text-underline-offset:2px">{{ digFilesText }}</button> ·
+          <button onclick="{{ digNotes }}" style="border:0;background:transparent;color:var(--signal);font:inherit;cursor:pointer;padding:0;text-decoration:underline;text-underline-offset:2px">{{ digNotesText }}</button> ·
+          <button onclick="{{ digChat }}" style="border:0;background:transparent;color:var(--signal);font:inherit;cursor:pointer;padding:0;text-decoration:underline;text-underline-offset:2px">{{ digChatText }}</button>
+        </div>
+        <div class="dz-scroll" style="max-height:486px;overflow:auto;padding:8px">
+          <sc-for list="{{ activity }}" as="a">
+            <div style="display:flex;align-items:flex-start;gap:11px;padding:10px;border-radius:13px;animation:dzSlide .25s ease both">
+              <span style="width:30px;height:30px;border-radius:10px;display:grid;place-items:center;flex:none;background:{{ a.bg }};color:{{ a.fg }}">{{ a.iconEl }}</span>
+              <span style="flex:1;min-width:0">
+                <span style="display:block;font-size:13px;line-height:1.4">{{ a.text }}</span>
+                <span style="font-size:11px;color:var(--ink-soft)">{{ a.whenText }}</span>
+              </span>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isChat }}">
+        <div style="display:flex;flex-direction:column;height:512px">
+          <div class="dz-scroll" ref="{{ setChatScroll }}" data-keep="chatscroll" style="flex:1;overflow:auto;padding:14px 14px 6px;display:flex;flex-direction:column;gap:10px">
+            <sc-for list="{{ chat }}" as="m">
+              <sc-if value="{{ m.mine }}">
+                <div style="align-self:flex-end;max-width:80%;animation:dzSlide .2s ease both">
+                  <div style="background:var(--signal);color:#fff;padding:9px 13px;border-radius:15px 15px 4px 15px;font-size:13.5px;line-height:1.45;word-break:break-word;box-shadow:0 8px 20px -12px color-mix(in srgb,var(--signal) 90%,transparent)">{{ m.text }}</div>
+                  <div style="text-align:right;font-size:10.5px;color:var(--ink-soft);margin-top:3px">{{ m.whenText }}</div>
+                </div>
+              </sc-if>
+              <sc-if value="{{ m.theirs }}">
+                <div style="display:flex;gap:9px;align-items:flex-end;max-width:88%;animation:dzSlide .2s ease both">
+                  <span style="width:28px;height:28px;border-radius:50%;flex:none;display:grid;place-items:center;background:var(--paper-2);border:1px solid var(--line-soft);color:var(--ink);font-size:10.5px;font-weight:700;font-family:ui-monospace,Menlo,monospace">{{ m.initials }}</span>
+                  <span style="min-width:0">
+                    <span style="display:block;font-size:11px;color:var(--ink-soft);margin:0 0 3px 2px">{{ m.author }}</span>
+                    <span style="display:block;background:var(--paper-2);border:1px solid var(--line-soft);color:var(--ink);padding:9px 13px;border-radius:15px 15px 15px 4px;font-size:13.5px;line-height:1.45;word-break:break-word">{{ m.text }}</span>
+                    <span style="display:block;font-size:10.5px;color:var(--ink-soft);margin:3px 0 0 2px">{{ m.whenText }}</span>
+                  </span>
+                </div>
+              </sc-if>
+            </sc-for>
+          </div>
+          <div style="display:flex;gap:9px;padding:12px;border-top:1px solid var(--line-soft)">
+            <input oninput="{{ onChatInput }}" onkeydown="{{ onChatKey }}" data-keep="chat" value="{{ chatDraft }}" placeholder="Message your devices…" style="flex:1;border:1px solid var(--line);background:var(--paper-2);color:var(--ink);font-size:14px;padding:10px 14px;border-radius:999px;outline:none" style-focus="border-color:var(--signal)">
+            <button onclick="{{ sendChat }}" disabled="{{ chatDisabled }}" style="border:0;background:var(--ink);color:var(--canvas);width:42px;height:42px;border-radius:50%;cursor:pointer;display:grid;place-items:center;flex:none" style-hover="background:var(--signal)">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"></path></svg>
+            </button>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isScreen }}">
+        <div style="padding:18px 16px 16px;text-align:center">
+          <div style="width:52px;height:52px;margin:0 auto 12px;border-radius:15px;display:grid;place-items:center;background:color-mix(in srgb,var(--signal) 16%,transparent);color:var(--signal)">
+            <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="13" rx="2"></rect><path d="M8 21h8M12 17v4"></path></svg>
+          </div>
+          <div style="display:inline-flex;align-items:center;gap:8px;font-size:13.5px;font-weight:600"><span style="width:8px;height:8px;border-radius:50%;background:{{ scrDot }}"></span>Laptop screen</div>
+          <p style="margin:6px 0 14px;color:var(--ink-soft);font-size:12.5px;line-height:1.5">{{ scrText }}</p>
+          <sc-if value="{{ scrReady }}">
+            <a href="/screen" target="_blank" style="display:inline-flex;align-items:center;gap:8px;border:0;background:var(--signal);color:#06231f;font-weight:600;font-size:13.5px;padding:11px 20px;border-radius:12px;text-decoration:none;box-shadow:0 10px 24px -12px color-mix(in srgb,var(--signal) 90%,transparent)">Open live screen</a>
+            <p style="margin:10px 0 0;color:var(--ink-soft);font-size:11.5px">View and control this laptop from any device</p>
+          </sc-if>
+          <sc-if value="{{ scrNoVnc }}">
+            <pre style="margin:0;text-align:left;background:var(--paper-2);border:1px solid var(--line-soft);border-radius:12px;padding:12px;font-family:ui-monospace,Menlo,monospace;font-size:11px;line-height:1.7;overflow:auto;color:var(--signal)">sudo apt install x11vnc
+x11vnc -display :0 -localhost \
+  -forever -shared -nopass -bg</pre>
+            <p style="margin:8px 0 0;color:var(--ink-soft);font-size:11.5px">Run once on the laptop, then tap refresh.</p>
+          </sc-if>
+          <button onclick="{{ refreshScreen }}" style="margin-top:12px;border:1px solid var(--line);background:transparent;color:var(--ink-soft);font-size:12.5px;padding:8px 16px;border-radius:999px;cursor:pointer" style-hover="border-color:var(--signal);color:var(--signal)">Refresh status</button>
+        </div>
+      </sc-if>
+    </aside>
+
+  </div>
+</div>
+
+<sc-if value="{{ upActive }}">
+  <div style="position:fixed;inset:0;background:rgba(10,18,28,.4);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);display:grid;place-items:center;padding:24px;z-index:80">
+    <div style="background:var(--paper);backdrop-filter:var(--glass);-webkit-backdrop-filter:var(--glass);border:1px solid var(--line);border-radius:26px;padding:34px 30px 28px;text-align:center;width:380px;max-width:100%;box-shadow:var(--shadow)">
+      <div style="position:relative;width:160px;height:160px;margin:0 auto 6px;display:grid;place-items:center">
+        <div style="position:absolute;width:120px;height:120px;border-radius:50%;border:1.5px solid var(--signal);animation:dzSonar 1.9s ease-out infinite"></div>
+        <div style="position:absolute;width:120px;height:120px;border-radius:50%;border:1.5px solid var(--signal);animation:dzSonar 1.9s ease-out infinite;animation-delay:.65s"></div>
+        <div style="position:absolute;width:120px;height:120px;border-radius:50%;border:1.5px solid var(--signal);animation:dzSonar 1.9s ease-out infinite;animation-delay:1.3s"></div>
+        <svg width="148" height="148" viewBox="0 0 120 120" style="position:absolute;inset:0">
+          <circle cx="60" cy="60" r="54" fill="none" stroke="var(--line-soft)" stroke-width="7"></circle>
+          <circle cx="60" cy="60" r="54" fill="none" stroke="var(--signal)" stroke-width="7" stroke-linecap="round" stroke-dasharray="{{ arcDash }}" stroke-dashoffset="{{ arcOffset }}" transform="rotate(-90 60 60)" style="transition:stroke-dashoffset .12s linear"></circle>
+        </svg>
+        <div style="position:relative;z-index:2">
+          <sc-if value="{{ upDone }}">
+            <span style="display:grid;place-items:center;width:56px;height:56px;border-radius:50%;background:var(--signal);color:#fff;box-shadow:0 0 22px -4px color-mix(in srgb,var(--signal) 90%,transparent);animation:dzPop .4s ease both"><svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 13l4 4L19 7"></path></svg></span>
+          </sc-if>
+          <sc-if value="{{ upGoing }}">
+            <span style="font-size:30px;font-weight:700;font-family:ui-monospace,Menlo,monospace;color:var(--ink)">{{ upProgress }}<span style="font-size:16px;color:var(--ink-soft)">%</span></span>
+          </sc-if>
+        </div>
+      </div>
+      <div style="font-size:16px;font-weight:600;margin-top:6px">{{ upTitle }}</div>
+      <div style="font-size:13px;color:var(--ink-soft);margin-top:3px">{{ upSub }}</div>
+      <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:7px;margin-top:18px">
+        <sc-for list="{{ upDevices }}" as="u">
+          <span style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px;padding:5px 11px;border-radius:999px;border:1px solid;transition:all .25s;{{ u.style }}">
+            <sc-if value="{{ u.lit }}"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 13l4 4L19 7"></path></svg></sc-if>
+            {{ u.name }}
+          </span>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+</sc-if>
+
+<sc-if value="{{ pvOpen }}">
+  <div onclick="{{ onPreviewBackdrop }}" style="position:fixed;inset:0;background:rgba(10,18,28,.55);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);display:grid;place-items:center;padding:24px;z-index:85">
+    <div style="background:var(--paper);backdrop-filter:var(--glass);-webkit-backdrop-filter:var(--glass);border:1px solid var(--line);border-radius:22px;padding:16px;max-width:min(920px,94vw);max-height:88vh;display:flex;flex-direction:column;gap:12px;box-shadow:var(--shadow)">
+      <div style="display:flex;align-items:center;gap:10px">
+        <b style="font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0">{{ pvName }}</b>
+        <sc-if value="{{ pvHasDown }}"><a href="{{ pvDownHref }}" style="display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:transparent;color:var(--ink);font-size:12.5px;padding:7px 13px;border-radius:999px;text-decoration:none" style-hover="border-color:var(--signal);color:var(--signal)">Download</a></sc-if>
+        <button onclick="{{ closePreview }}" style="border:1px solid var(--line);background:transparent;color:var(--ink);width:32px;height:32px;border-radius:50%;cursor:pointer;display:grid;place-items:center" style-hover="border-color:var(--pop);color:var(--pop)"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12"></path><path d="M18 6L6 18"></path></svg></button>
+      </div>
+      <div class="dz-scroll" style="overflow:auto;border-radius:14px;background:var(--paper-2);display:grid;place-items:center;min-height:180px;min-width:280px">
+        <sc-if value="{{ pvIsImage }}"><img src="{{ pvSrc }}" alt="" style="max-width:100%;max-height:72vh;display:block;border-radius:14px"></sc-if>
+        <sc-if value="{{ pvIsVideo }}"><video src="{{ pvSrc }}" controls="" autoplay="" style="max-width:100%;max-height:72vh;display:block;border-radius:14px;outline:none"></video></sc-if>
+        <sc-if value="{{ pvIsAudio }}"><audio src="{{ pvSrc }}" controls="" autoplay="" style="width:min(420px,80vw);margin:34px 20px"></audio></sc-if>
+        <sc-if value="{{ pvIsPdf }}"><iframe src="{{ pvSrc }}" style="width:min(860px,90vw);height:72vh;border:0;border-radius:14px;background:#fff"></iframe></sc-if>
+        <sc-if value="{{ pvIsText }}"><pre style="margin:0;padding:18px;max-width:min(820px,88vw);max-height:70vh;overflow:auto;font-family:ui-monospace,Menlo,monospace;font-size:13px;line-height:1.6;white-space:pre-wrap;word-break:break-word;color:var(--ink)">{{ pvText }}</pre></sc-if>
+      </div>
+    </div>
+  </div>
+</sc-if>
+
+<sc-if value="{{ storageOpen }}">
+  <div onclick="{{ onStorageBackdrop }}" style="position:fixed;inset:0;background:rgba(10,18,28,.45);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);display:grid;place-items:center;padding:24px;z-index:88">
+    <div style="background:var(--paper);backdrop-filter:var(--glass);-webkit-backdrop-filter:var(--glass);border:1px solid var(--line);border-radius:24px;padding:24px;width:420px;max-width:94vw;box-shadow:var(--shadow)">
+      <h3 style="margin:0 0 2px;font-size:17px">Storage</h3>
+      <p style="margin:0 0 14px;color:var(--ink-soft);font-size:13px">{{ usedText }} shared · {{ freeText }} free on disk</p>
+      <sc-if value="{{ hasLargest }}">
+        <div style="font-family:ui-monospace,Menlo,monospace;font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:6px">largest files</div>
+        <div class="dz-scroll" style="max-height:220px;overflow:auto;display:flex;flex-direction:column;gap:2px;margin-bottom:14px">
+          <sc-for list="{{ largest }}" as="f">
+            <div style="display:flex;align-items:center;gap:9px;padding:7px 8px;border-radius:10px" style-hover="background:var(--paper-2)">
+              <span style="flex:1;min-width:0;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ f.name }}</span>
+              <span style="font-size:11.5px;color:var(--ink-soft);font-family:ui-monospace,Menlo,monospace">{{ f.sizeText }}</span>
+              <button onclick="{{ f.delHandler }}" title="Delete" style="border:0;background:transparent;color:var(--ink-soft);cursor:pointer;padding:4px;border-radius:7px;display:inline-flex" style-hover="color:var(--pop);background:var(--paper-2)"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"></path></svg></button>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button onclick="{{ cleanOld }}" style="flex:1;border:1px solid var(--line);background:transparent;color:var(--ink);font-size:12.5px;padding:10px;border-radius:11px;cursor:pointer" style-hover="border-color:var(--signal);color:var(--signal)">Clear items older than 30 days</button>
+        <button onclick="{{ cleanUnpinned }}" style="flex:1;border:1px solid color-mix(in srgb,var(--pop) 50%,transparent);background:color-mix(in srgb,var(--pop) 10%,transparent);color:var(--pop);font-size:12.5px;padding:10px;border-radius:11px;cursor:pointer">Delete all unpinned</button>
+      </div>
+      <button onclick="{{ closeStorage }}" style="margin-top:12px;width:100%;border:1px solid var(--line);background:var(--paper-2);color:var(--ink);padding:9px;border-radius:11px;cursor:pointer">Close</button>
+    </div>
+  </div>
+</sc-if>
+
+<sc-if value="{{ qrOpen }}">
+  <div onclick="{{ onQrBackdrop }}" style="position:fixed;inset:0;background:rgba(10,18,28,.4);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);display:grid;place-items:center;padding:24px;z-index:90">
+    <div style="background:var(--paper);backdrop-filter:var(--glass);-webkit-backdrop-filter:var(--glass);border:1px solid var(--line);border-radius:24px;padding:26px;text-align:center;max-width:320px;box-shadow:var(--shadow)">
+      <h3 style="margin:0 0 4px;font-size:17px">Open on another device</h3>
+      <p style="margin:0 0 16px;color:var(--ink-soft);font-size:13px">Make sure it's on the same Wi-Fi, then scan:</p>
+      <div style="background:#fff;border-radius:14px;padding:14px;display:inline-block">{{ qrEl }}</div>
+      <div style="margin-top:14px;font-family:ui-monospace,Menlo,monospace;font-size:13px;word-break:break-all">{{ hostUrl }}</div>
+      <button onclick="{{ closeQR }}" style="margin-top:16px;border:1px solid var(--line);background:var(--paper-2);color:var(--ink);padding:9px 18px;border-radius:11px;cursor:pointer">Close</button>
+    </div>
+  </div>
+</sc-if>
+
+<sc-if value="{{ toastMsg }}">
+  <div style="position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:color-mix(in srgb,var(--ink) 90%,transparent);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);color:var(--canvas);padding:11px 18px;border-radius:12px;font-size:14px;z-index:95;box-shadow:var(--shadow);animation:dzRise .2s ease both">{{ toastMsg }}</div>
+</sc-if>
+
+</template>
+<script>
+/* Dropzone v4 — self-contained UI (no frameworks). */
+(function(){
+  "use strict";
+  const root = document.getElementById("dz-root");
+  const tpl  = document.getElementById("dz-tpl");
+
+  // ---------------------------------------------------------------- icons
+  const P = {
+    laptop:["M3 5h18v11H3z","M2 20h20"], phone:["M7 2h10v20H7z","M11 18h2"],
+    tv:["M2 4h20v13H2z","M8 21h8M12 17v4"], tablet:["M5 2h14v20H5z","M11 18h2"],
+    up:["M12 16V6M8 10l4-4 4 4","M5 20h14"],
+    link:["M9 15l6-6","M10 6l1-1a4 4 0 0 1 6 6l-1 1","M14 18l-1 1a4 4 0 0 1-6-6l1-1"],
+    down:["M12 4v12M7 11l5 5 5-5","M5 20h14"], join:["M12 5v14M5 12h14"],
+    chat:["M21 14a2 2 0 0 1-2 2H8l-4 4V5a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2z"],
+    trash:["M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"],
+    pin:["M12 17v5","M8 3h8l-1 7 3 3H6l3-3z"],
+    share:["M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7","M16 6l-4-4-4 4","M12 2v13"],
+    mic:["M12 2a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z","M19 10v1a7 7 0 0 1-14 0v-1","M12 18v4"],
+    stop:["M6 6h12v12H6z"],
+    flame:["M12 2c1 4-4 5-4 10a4 4 0 0 0 8 0c0-2-1-3-1-3s3 1 3 4a6 6 0 0 1-12 0C6 7 11 6 12 2z"],
+    eye:["M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z","M12 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0-6 0"],
+    globe:["M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20z","M2 12h20","M12 2c3 3 3 17 0 20c-3-3-3-17 0-20z"],
+    check:["M5 13l4 4L19 7"],
+    x:["M6 6l12 12","M18 6L6 18"],
+  };
+  function svg(name, size, sw){
+    const s = size||16;
+    const paths = (P[name]||[]).map(d=>'<path d="'+d+'"></path>').join("");
+    return '<svg viewBox="0 0 24 24" width="'+s+'" height="'+s+'" fill="none" stroke="currentColor" stroke-width="'+(sw||2)+'" stroke-linecap="round" stroke-linejoin="round">'+paths+'</svg>';
+  }
+  const sunIcon = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19M19 5l-1.5 1.5M6.5 17.5 5 19"></path></svg>';
+  const moonIcon = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"></path></svg>';
+
+  // ---------------------------------------------------------------- state
+  let state = {
+    theme:"light", filter:"all", query:"", noteDraft:"", chatDraft:"",
+    tab:"devices", qrOpen:false, toastMsg:null, isDragging:false,
+    upload:{active:false, progress:0, title:"", sub:"", count:0},
+    items:[], devices:[], activity:[], chat:[],
+    me:"", remote:false, stats:null,
+    selecting:false, selected:{},
+    preview:null, previewText:"",
+    noteBurn:false, noteExpire:false, target:"",
+    recording:false, renaming:null, renameDraft:"", labelFilter:"", screen:null, storageOpen:false,
+  };
+  let fileInputEl=null, chatScrollEl=null, qrNonce=0, toastTimer=null, raf=null, lastSig="";
+  let mediaRecorder=null, recChunks=[], sse=null, pollTimer=null;
+
+  function setState(patch){ Object.assign(state, patch); scheduleRender(); }
+  function scheduleRender(){ if(raf) return; raf=requestAnimationFrame(()=>{ raf=null; doRender(); }); }
+
+  // ---------------------------------------------------------------- helpers
+  function fmtSize(b){ if(b==null) return ""; if(b<1024) return b+" B"; const u=["KB","MB","GB","TB"]; let i=-1; do{b/=1024;i++}while(b>=1024 && i<u.length-1); return b.toFixed(b<10?1:0)+" "+u[i]; }
+  function fmtWhen(ts){ const d=(Date.now()/1000)-ts; if(d<60) return "just now"; if(d<3600) return Math.floor(d/60)+"m ago"; if(d<86400) return Math.floor(d/3600)+"h ago"; return new Date(ts*1000).toLocaleDateString(undefined,{month:"short",day:"numeric"}); }
+  function ext(name){ const m=(name||"").split(".").pop(); return (m && m.length<=5 && m!==name) ? m.toUpperCase() : "FILE"; }
+  function initials(name){ const w=(name||"").trim().split(/\s+/).filter(x=>/[a-z0-9]/i.test(x)); if(w.length>=2) return (w[0][0]+w[1][0]).toUpperCase(); const f=w[0]||name||"?"; return ((f[0]||"")+(f[1]||"")).toUpperCase(); }
+  function esc(s){ const d=document.createElement("div"); d.textContent=s==null?"":String(s); return d.innerHTML; }
+  function isToday(ts){ const d=new Date(ts*1000), n=new Date(); return d.toDateString()===n.toDateString(); }
+  function looksLikeUrl(s){ return /^https?:\/\/\S+$/i.test((s||"").trim()); }
+  function post(url, body){ return fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body||{})}); }
+
+  // ---------------------------------------------------------------- theme / toast
+  function applyTheme(t){ document.documentElement.dataset.theme=t; try{localStorage.setItem("dz-theme",t);}catch(e){} setState({theme:t}); }
+  function toggleTheme(){ applyTheme(state.theme==="dark"?"light":"dark"); }
+  function toast(msg){ clearTimeout(toastTimer); setState({toastMsg:msg}); toastTimer=setTimeout(()=>setState({toastMsg:null}),1900); }
+
+  // ---------------------------------------------------------------- upload paths
+  function setFileInput(el){ fileInputEl=el; }
+  function setChatScroll(el){ chatScrollEl=el; }
+  function onSlotClick(){ if(fileInputEl) fileInputEl.click(); }
+  function onFileChange(e){ const f=[].slice.call(e.target.files); if(f.length) startUpload(f); e.target.value=""; }
+  function onDragOver(e){ e.preventDefault(); if(!state.isDragging) setState({isDragging:true}); }
+  function onDragLeave(e){ e.preventDefault(); setState({isDragging:false}); }
+  function onDrop(e){
+    e.preventDefault(); setState({isDragging:false});
+    const dt=e.dataTransfer; if(!dt) return;
+    // folder support: walk webkit entries when present
+    const entries=[].slice.call(dt.items||[]).map(i=>i.webkitGetAsEntry&&i.webkitGetAsEntry()).filter(Boolean);
+    if(entries.length && entries.some(en=>en.isDirectory)){
+      collectEntries(entries).then(files=>{ if(files.length) startUpload(files); else toast("Nothing readable in that folder"); });
+      return;
+    }
+    const f=[].slice.call(dt.files); if(f.length) startUpload(f);
+  }
+  function collectEntries(entries){
+    const out=[];
+    function walk(entry, prefix){
+      return new Promise(res=>{
+        if(entry.isFile){
+          entry.file(f=>{ try{ out.push(new File([f], prefix+f.name, {type:f.type})); }catch(e){ out.push(f); } res(); }, ()=>res());
+        } else if(entry.isDirectory){
+          const rd=entry.createReader();
+          const all=[];
+          (function read(){ rd.readEntries(es=>{
+            if(!es.length){ Promise.all(all).then(res); return; }
+            for(const e2 of es) all.push(walk(e2, prefix+entry.name+"/"));
+            read();
+          }, ()=>res()); })();
+        } else res();
+      });
+    }
+    return Promise.all(entries.map(e=>walk(e,""))).then(()=>out);
+  }
+
+  function startUpload(files){
+    const count=files.length;
+    const title=count===1?files[0].name:count+" files";
+    setState({upload:{active:true, progress:0, title, sub:"Beaming to your devices…", count}});
+    const fd=new FormData();
+    for(const f of files) fd.append("files", f, f.name);
+    if(state.target) fd.append("target", state.target);
+    const xhr=new XMLHttpRequest();
+    xhr.open("POST","/api/upload");
+    xhr.upload.onprogress=e=>{ if(e.lengthComputable){ const p=Math.round(e.loaded/e.total*100); setState({upload:Object.assign({},state.upload,{progress:p, sub:p>=100?"Delivered":"Beaming to your devices…"})}); } };
+    xhr.onload=()=>{ setState({upload:Object.assign({},state.upload,{progress:100, sub:"Delivered"})});
+      setTimeout(()=>setState({upload:Object.assign({},state.upload,{active:false})}), 650);
+      if(xhr.status<300){ toast(count===1?"Shared "+files[0].name:count+" files shared"); loadState(); }
+      else toast("Upload failed"); };
+    xhr.onerror=()=>{ setState({upload:Object.assign({},state.upload,{active:false})}); toast("Upload failed"); };
+    xhr.send(fd);
+  }
+
+  // paste-to-upload (files or screenshots)
+  function onPaste(e){
+    const t=e.target;
+    if(t && (t.tagName==="INPUT"||t.tagName==="TEXTAREA")) return;   // let normal paste work in inputs
+    const items=[].slice.call((e.clipboardData||{}).items||[]);
+    const files=items.filter(i=>i.kind==="file").map(i=>i.getAsFile()).filter(Boolean);
+    if(files.length){ e.preventDefault();
+      startUpload(files.map((f,i)=>f.name?f:new File([f],"pasted-"+Date.now()+"-"+i+".png",{type:f.type})));
+    }
+  }
+
+  // ---------------------------------------------------------------- notes
+  function onNoteInput(e){ setState({noteDraft:e.target.value}); }
+  function toggleBurn(){ setState({noteBurn:!state.noteBurn}); }
+  function toggleExpire(){ setState({noteExpire:!state.noteExpire}); }
+  function shareNote(){
+    const c=state.noteDraft.trim(); if(!c) return;
+    const body={content:c, burn:state.noteBurn, expire_hours:state.noteExpire?24:0, target:state.target};
+    setState({noteDraft:"", noteBurn:false, noteExpire:false});
+    post("/api/note", body).then(()=>{ toast("Text shared"); loadState(); }).catch(()=>toast("Failed to share"));
+  }
+  function fetchUrl(){
+    const u=state.noteDraft.trim(); if(!looksLikeUrl(u)) return;
+    setState({noteDraft:""}); toast("Fetching on the server…");
+    post("/api/fetch-url",{url:u}).then(r=>r.json()).then(d=>{
+      if(d.ok){ toast("Saved "+d.name); loadState(); } else toast(d.error||"Fetch failed");
+    }).catch(()=>toast("Fetch failed"));
+  }
+
+  // ---------------------------------------------------------------- voice memo
+  function toggleRecord(){
+    if(state.recording){ try{ mediaRecorder && mediaRecorder.stop(); }catch(e){} return; }
+    if(!navigator.mediaDevices || !window.MediaRecorder){ toast("Recording not supported here"); return; }
+    navigator.mediaDevices.getUserMedia({audio:true}).then(stream=>{
+      recChunks=[];
+      mediaRecorder=new MediaRecorder(stream);
+      mediaRecorder.ondataavailable=e=>{ if(e.data && e.data.size) recChunks.push(e.data); };
+      mediaRecorder.onstop=()=>{
+        stream.getTracks().forEach(t=>t.stop());
+        setState({recording:false});
+        if(recChunks.length){
+          const blob=new Blob(recChunks,{type:mediaRecorder.mimeType||"audio/webm"});
+          const stamp=new Date().toISOString().slice(0,16).replace(/[T:]/g,"-");
+          startUpload([new File([blob],"voice-memo-"+stamp+".webm",{type:blob.type})]);
+        }
+      };
+      mediaRecorder.start();
+      setState({recording:true});
+      toast("Recording… tap again to stop");
+    }).catch(()=>toast("Mic permission denied"));
+  }
+
+  // ---------------------------------------------------------------- item ops
+  function deleteItem(id, kind){ fetch("/api/item/"+kind+"/"+id,{method:"DELETE"}).then(()=>{ toast("Deleted"); loadState(); }).catch(()=>{}); }
+  function pinItem(id, kind){ post("/api/pin/"+kind+"/"+id).then(()=>loadState()).catch(()=>{}); }
+  function copyText(t){ try{ navigator.clipboard.writeText(t); }catch(e){} toast("Copied to clipboard"); }
+  function copyShare(url){ copyText(location.origin+url); toast("Share link copied"); }
+  function revealBurn(id){
+    post("/api/reveal/"+id).then(r=>r.json()).then(d=>{
+      if(d.content!=null){ setState({preview:{kind:"burn", name:"Secret note"}, previewText:d.content}); loadState(); }
+      else { toast("Already gone"); loadState(); }
+    }).catch(()=>toast("Couldn't open"));
+  }
+
+  // ---------------------------------------------------------------- selection / bulk
+  function toggleSelecting(){ setState({selecting:!state.selecting, selected:{}}); }
+  function toggleSelect(key){ const s=Object.assign({},state.selected); if(s[key]) delete s[key]; else s[key]=true; setState({selected:s}); }
+  function selCount(){ return Object.keys(state.selected).length; }
+  function bulkDelete(){
+    const ids=Object.keys(state.selected).map(k=>{ const i=k.indexOf(":"); return {kind:k.slice(0,i), id:k.slice(i+1)}; });
+    if(!ids.length) return;
+    post("/api/bulk-delete",{ids}).then(r=>r.json()).then(d=>{ toast("Deleted "+(d.deleted||0)+" items"); setState({selecting:false, selected:{}}); loadState(); });
+  }
+  function bulkLabel(){
+    const ids=Object.keys(state.selected).map(k=>{ const i=k.indexOf(":"); return {kind:k.slice(0,i), id:k.slice(i+1)}; });
+    if(!ids.length){ toast("Select items first"); return; }
+    const label=(window.prompt("Label for "+ids.length+" item(s) — empty to clear:","")||"").trim();
+    post("/api/label",{ids, label}).then(()=>{ toast(label?("Labelled “"+label+"”"):"Labels cleared"); setState({selecting:false, selected:{}}); loadState(); });
+  }
+  function setLabelFilter(l){ setState({labelFilter: state.labelFilter===l ? "" : l}); }
+  function bulkZip(){
+    const fids=Object.keys(state.selected).filter(k=>k.indexOf("file:")===0).map(k=>k.slice(5));
+    if(!fids.length){ toast("Select some files first"); return; }
+    window.location = "/api/zip?ids="+fids.join(",");
+    toast("Zipping "+fids.length+" files…");
+  }
+
+  // ---------------------------------------------------------------- preview
+  function openStorage(){ setState({storageOpen:true}); }
+  function closeStorage(){ setState({storageOpen:false}); }
+  function onStorageBackdrop(e){ if(e.target===e.currentTarget) closeStorage(); }
+  function cleanup(mode){
+    if(!window.confirm(mode==="unpinned"?"Delete ALL unpinned items?":"Delete everything older than 30 days (except pinned)?")) return;
+    post("/api/cleanup",{mode}).then(r=>r.json()).then(d=>{ toast("Removed "+(d.deleted||0)+" items"); loadState(); });
+  }
+  function openPreview(it){
+    if(it.preview==="text"){
+      setState({preview:it, previewText:"Loading…"});
+      fetch("/api/preview-text/"+it.id).then(r=>r.json()).then(d=>setState({previewText:d.text||""})).catch(()=>setState({previewText:"(couldn't load)"}));
+    } else if(it.preview){
+      setState({preview:it, previewText:""});
+    } else {
+      window.open(it.download_url, "_blank");
+    }
+  }
+  function closePreview(){ setState({preview:null, previewText:""}); }
+  function onPreviewBackdrop(e){ if(e.target===e.currentTarget) closePreview(); }
+
+  // ---------------------------------------------------------------- devices
+  function startRename(d){ setState({renaming:d.ip, renameDraft:d.name}); }
+  function onRenameInput(e){ setState({renameDraft:e.target.value}); }
+  function onRenameKey(e, ip){ if(e.key==="Enter"){ e.preventDefault(); commitRename(ip); } if(e.key==="Escape"){ setState({renaming:null}); } }
+  function commitRename(ip){
+    const name=state.renameDraft.trim();
+    setState({renaming:null});
+    post("/api/device/name",{ip, name}).then(()=>{ toast(name?"Renamed":"Name cleared"); loadState(); });
+  }
+
+  function setTarget(e){ setState({target:e.target.value}); }
+  function setFilter(f){ setState({filter:f}); }
+  function onSearch(e){ setState({query:e.target.value}); }
+  function setTab(t){ setState({tab:t}); if(t==="chat") setTimeout(scrollChat,40); if(t==="screen") refreshScreen(); }
+  function refreshScreen(){ fetch("/api/screen-status").then(r=>r.json()).then(d=>setState({screen:d})).catch(()=>setState({screen:{vnc:false,bridge:false}})); }
+  function scrollChat(){ if(chatScrollEl) chatScrollEl.scrollTop=chatScrollEl.scrollHeight; }
+
+  function onChatInput(e){ setState({chatDraft:e.target.value}); }
+  function onChatKey(e){ if(e.key==="Enter"){ e.preventDefault(); sendChat(); } }
+  function sendChat(){ const t=state.chatDraft.trim(); if(!t) return; setState({chatDraft:""});
+    post("/api/chat",{text:t}).then(()=>{ loadState(); setTimeout(scrollChat,80); }).catch(()=>{}); }
+
+  function openQR(){ qrNonce=Date.now(); setState({qrOpen:true}); }
+  function closeQR(){ setState({qrOpen:false}); }
+  function onQrBackdrop(e){ if(e.target===e.currentTarget) closeQR(); }
+  function doLogout(){ const f=document.createElement("form"); f.method="POST"; f.action="/logout"; document.body.appendChild(f); f.submit(); }
+
+  function pillStyle(on){ return "border:0;background:"+(on?"var(--paper-solid)":"transparent")+";color:"+(on?"var(--ink)":"var(--ink-soft)")+";font-size:13px;padding:6px 13px;border-radius:999px;cursor:pointer;font-weight:"+(on?"600":"500")+";"+(on?"box-shadow:0 2px 8px -2px rgba(16,38,58,.28)":""); }
+  function tabStyle(on){ return "flex:1;border:0;background:"+(on?"var(--paper-solid)":"transparent")+";color:"+(on?"var(--ink)":"var(--ink-soft)")+";font-size:13px;font-weight:"+(on?"600":"500")+";padding:7px 0;border-radius:999px;cursor:pointer;"+(on?"box-shadow:0 2px 8px -2px rgba(16,38,58,.28)":""); }
+  function chipStyle(on){ return "display:inline-flex;align-items:center;gap:6px;border:1px solid "+(on?"var(--signal)":"var(--line)")+";background:"+(on?"color-mix(in srgb,var(--signal) 14%,transparent)":"transparent")+";color:"+(on?"var(--signal)":"var(--ink-soft)")+";font-size:12px;padding:5px 11px;border-radius:999px;cursor:pointer"; }
+
+  // ---------------------------------------------------------------- values
+  function computeV(){
+    const s=state;
+    const q=s.query.trim().toLowerCase();
+    const feedItems = s.items.filter(it=>{
+      if(s.filter==="file"  && it.kind!=="file") return false;
+      if(s.filter==="note"  && it.kind!=="note") return false;
+      if(s.filter==="image" && !(it.kind==="file" && it.is_image)) return false;
+      if(s.labelFilter && (it.label||"")!==s.labelFilter) return false;
+      if(!q) return true;
+      const hay=(it.kind==="note"?(it.content||""):it.name)||""; return hay.toLowerCase().includes(q);
+    }).map(it=>{
+      const key=it.kind+":"+it.id;
+      return {
+        isNote:it.kind==="note" && !it.burn, isBurn:it.kind==="note" && !!it.burn,
+        isFile:it.kind==="file", isFile2:(it.kind==="file" && !it.is_image) || (it.kind==="file" && it.is_image && s.remote),
+        content:it.content, name:it.name, isImage:!!it.is_image,
+        thumbEl: (it.is_image && !s.remote) ? {__html:'<img src="'+esc(it.raw_url)+'" loading="lazy" alt="" style="width:100%;height:100%;object-fit:cover">'} : null,
+        isImage2: it.is_image && s.remote,
+        glyph: it.kind==="file"?ext(it.name):"",
+        sizeText: it.kind==="file"?fmtSize(it.size):"",
+        whenText:fmtWhen(it.created), label:it.label||"", hasLabel:!!it.label,
+        pinned:!!it.pinned, pinColor: it.pinned?"var(--pop)":"var(--ink-soft)",
+        forYou:!!it.mine_target, targeted:!!it.target,
+        hasShare:!!it.share_url,
+        selecting:s.selecting, checked:!!s.selected[key],
+        checkBg: s.selected[key]?"var(--signal)":"color-mix(in srgb,var(--paper-solid) 80%,transparent)",
+        openHandler:()=> s.selecting ? toggleSelect(key) : (it.kind==="file" ? openPreview(it) : null),
+        selectHandler:(e)=>{ e.stopPropagation(); toggleSelect(key); },
+        pinHandler:(e)=>{ e.stopPropagation(); pinItem(it.id, it.kind); },
+        shareHandler:(e)=>{ e.stopPropagation(); copyShare(it.share_url); },
+        copyHandler:(e)=>{ e.stopPropagation(); copyText(it.content); },
+        revealHandler:(e)=>{ e.stopPropagation(); revealBurn(it.id); },
+        delHandler:(e)=>{ e.stopPropagation(); deleteItem(it.id, it.kind); },
+        downHref:it.download_url||"#",
+      };
+    });
+
+    const devices = s.devices.map(d=>({
+      name:d.name, ip:d.ip, you:!!d.you, iconEl:{__html:svg(d.type||"laptop",18)},
+      statusText:d.you?"this device":(d.status==="active"?"active":"idle"),
+      dotColor:d.status==="active"?"var(--signal)":"var(--ink-soft)",
+      renaming:s.renaming===d.ip, notRenaming:s.renaming!==d.ip,
+      renameHandler:()=>startRename(d),
+      renameKey:(e)=>onRenameKey(e, d.ip),
+      renameCommit:()=>commitRename(d.ip),
+    }));
+    const activeCount = s.devices.filter(d=>d.status==="active").length;
+
+    const actColors={ up:["color-mix(in srgb,var(--signal) 18%,transparent)","var(--signal)"], link:["color-mix(in srgb,var(--signal) 18%,transparent)","var(--signal)"], down:["var(--paper-2)","var(--ink)"], join:["color-mix(in srgb,var(--pop) 20%,transparent)","var(--pop)"], chat:["var(--paper-2)","var(--ink)"], trash:["var(--paper-2)","var(--ink-soft)"] };
+    const activity = s.activity.slice().sort((a,b)=>b.t-a.t).map(a=>{ const c=actColors[a.icon]||["var(--paper-2)","var(--ink)"]; return {iconEl:{__html:svg(a.icon,15)}, text:a.text, whenText:fmtWhen(a.t), bg:c[0], fg:c[1]}; });
+    document.documentElement.dataset.slim = s.remote ? "1" : "";
+    const tFiles=s.activity.filter(a=>a.icon==="up"&&isToday(a.t)).length;
+    const tNotes=s.activity.filter(a=>a.icon==="link"&&isToday(a.t)).length;
+    const tChats=s.activity.filter(a=>a.icon==="chat"&&isToday(a.t)).length;
+    const digest="Today: "+tFiles+" files · "+tNotes+" notes · "+tChats+" messages";
+    const digFilesText=tFiles+" files", digNotesText=tNotes+" notes", digChatText=tChats+" messages";
+
+    const chat = s.chat.map(m=>({ text:m.text, mine:!!m.mine, theirs:!m.mine, author:m.mine?"You":m.dev, initials:initials(m.dev), whenText:fmtWhen(m.t) }));
+
+    const up=s.upload, C=2*Math.PI*54, nDev=Math.max(1,s.devices.length);
+    const upDevices = s.devices.map((d,i)=>{ const lit=up.progress >= ((i+1)/nDev)*100-7;
+      return { name:d.name, lit, style: lit?"background:var(--signal);color:#fff;border-color:var(--signal)":"background:transparent;color:var(--ink-soft);border-color:var(--line-soft)" }; });
+
+    const targetOptions=[{value:"",label:"Everyone",selected:s.target===""}]
+      .concat(s.devices.filter(d=>!d.you).map(d=>({value:d.ip,label:d.name+" ("+d.ip+")",selected:s.target===d.ip})));
+    function initTargetSelect(el){
+      el.innerHTML = targetOptions.map(o=>'<option value="'+esc(o.value)+'"'+(o.selected?" selected":"")+'>'+esc(o.label)+'</option>').join("");
+      el.onchange = setTarget;
+    }
+
+    const labelSet={};
+    for(const it of s.items){ if(it.label) labelSet[it.label]=(labelSet[it.label]||0)+1; }
+    const labels=Object.keys(labelSet).sort().map(l=>({ name:l, count:labelSet[l],
+      style:chipStyle(s.labelFilter===l), clickHandler:()=>setLabelFilter(l) }));
+
+    const scr=s.screen||{};
+    const st=s.stats||{};
+    const storageText = st.total ? (fmtSize(st.used)+" shared · "+fmtSize(st.free)+" free on disk") : "";
+    const storagePct = st.total ? Math.min(100, Math.round((st.total-st.free)/st.total*100)) : 0;
+
+    const largest=(st.largest||[]).map(f=>({ name:f.name, sizeText:fmtSize(f.size),
+      delHandler:()=>deleteItem(f.id,"file") }));
+
+    const pv=s.preview||{};
+    const pvKind=pv.preview||pv.kind||"";
+
+    return {
+      deviceCount:s.devices.length, activeCount, count:s.items.length,
+      feedItems, devices, activity, chat, digest, digFilesText, digNotesText, digChatText,
+      showEmpty:s.items.length===0, isDragging:s.isDragging,
+      themeIcon:{__html: s.theme==="dark"?sunIcon:moonIcon},
+      netTag: s.remote ? "remote · via secure tunnel" : "local · private · this network only",
+      pillAll:pillStyle(s.filter==="all"), pillFile:pillStyle(s.filter==="file"), pillNote:pillStyle(s.filter==="note"), pillImage:pillStyle(s.filter==="image"),
+      filterAll:()=>setFilter("all"), filterFile:()=>setFilter("file"), filterNote:()=>setFilter("note"), filterImage:()=>setFilter("image"),
+      tabDev:tabStyle(s.tab==="devices"), tabAct:tabStyle(s.tab==="activity"), tabChatStyle:tabStyle(s.tab==="chat"),
+      tabDevices:()=>setTab("devices"), tabActivity:()=>setTab("activity"), tabChat:()=>setTab("chat"),
+      isDevices:s.tab==="devices", isActivity:s.tab==="activity", isChat:s.tab==="chat",
+      setFileInput, setChatScroll, onSlotClick, onFileChange, onDragOver, onDragLeave, onDrop,
+      noteDraft:s.noteDraft, onNoteInput, shareNote, noteDisabled:!s.noteDraft.trim(),
+      burnChip:chipStyle(s.noteBurn), expireChip:chipStyle(s.noteExpire), toggleBurn, toggleExpire,
+      burnIcon:{__html:svg("flame",13)}, clockLabel:"Expires in 24h",
+      showFetchUrl:looksLikeUrl(s.noteDraft), fetchUrl, globeIcon:{__html:svg("globe",13)},
+      recording:s.recording, toggleRecord,
+      micIcon:{__html: s.recording?svg("stop",16):svg("mic",16)},
+      micStyle:"border:1px solid "+(s.recording?"var(--pop)":"var(--line)")+";background:"+(s.recording?"color-mix(in srgb,var(--pop) 16%,transparent)":"transparent")+";color:"+(s.recording?"var(--pop)":"var(--ink-soft)")+";width:42px;height:42px;border-radius:12px;cursor:pointer;display:grid;place-items:center;flex:none",
+      targetOptions, setTarget, initTargetSelect, hasTarget:!!s.target,
+      labels, hasLabels:labels.length>0, bulkLabel,
+      tabScr:tabStyle(s.tab==="screen"), tabScreen:()=>setTab("screen"), isScreen:s.tab==="screen",
+      scrChecked:!!s.screen, scrReady:!!(scr.vnc && scr.bridge), scrVnc:!!scr.vnc, scrNoVnc:s.screen? !scr.vnc : false,
+      scrBridgeDown:!!(scr.vnc && !scr.bridge), refreshScreen,
+      scrDot: (scr.vnc&&scr.bridge)?"var(--signal)":"var(--pop)",
+      scrText: !s.screen ? "checking…" : (scr.vnc&&scr.bridge) ? "Ready — the laptop's screen is live" : (scr.vnc ? "Bridge offline — pip install websockify, then restart Dropzone" : "Not running yet — one-time setup below"),
+      storageOpen:s.storageOpen, openStorage, closeStorage, onStorageBackdrop, largest, hasLargest:largest.length>0,
+      cleanOld:()=>cleanup("older30"), cleanUnpinned:()=>cleanup("unpinned"),
+      usedText:fmtSize(st.used||0), freeText:fmtSize(st.free||0),
+      digFiles:()=>{ setFilter("file"); }, digNotes:()=>{ setFilter("note"); }, digChat:()=>setTab("chat"),
+      selecting:s.selecting, notSelecting:!s.selecting, toggleSelecting,
+      selectLabel: s.selecting?"Done":"Select",
+      selCountText: selCount()+" selected", anySelected:selCount()>0,
+      bulkDelete, bulkZip,
+      query:s.query, onSearch,
+      chatDraft:s.chatDraft, onChatInput, onChatKey, sendChat, chatDisabled:!s.chatDraft.trim(),
+      toggleTheme, openQR, closeQR, onQrBackdrop, doLogout,
+      qrOpen:s.qrOpen, qrEl:{__html:'<img src="/qr.svg?'+qrNonce+'" width="200" height="200" alt="QR code" style="display:block;width:200px;height:200px">'},
+      toastMsg:s.toastMsg,
+      upActive:up.active, upProgress:Math.round(up.progress), upDone:up.progress>=100, upGoing:up.progress<100,
+      upTitle:up.title, upSub:up.sub, upDevices, arcDash:C, arcOffset:C*(1-up.progress/100),
+      hostAddr:location.host, hostUrl:location.origin,
+      storageText, storagePct,
+      pvOpen:!!s.preview, closePreview, onPreviewBackdrop,
+      pvName:pv.name||"", pvIsImage:pvKind==="image", pvIsVideo:pvKind==="video", pvIsAudio:pvKind==="audio",
+      pvIsPdf:pvKind==="pdf", pvIsText:pvKind==="text"||pvKind==="burn",
+      pvSrc: pv.raw_url||"", pvText:s.previewText,
+      pvDownHref: pv.download_url||"", pvHasDown: !!pv.download_url,
+    };
+  }
+
+  // ---------------------------------------------------------------- mini interpreter
+  function stripBind(v){ const m=/{{\s*([\s\S]+?)\s*}}/.exec(v||""); return m?m[1].trim():(v||"").trim(); }
+  function resolve(expr, scope){
+    expr=(expr||"").trim();
+    if(expr==="true") return true; if(expr==="false") return false; if(expr==="null") return null;
+    const parts=expr.split("."); let v=scope;
+    for(const p of parts){ if(v==null) return undefined; v=v[p.trim()]; }
+    return v;
+  }
+  function interp(str, scope){ return str.replace(/{{\s*([\s\S]+?)\s*}}/g,(_,e)=>{ const v=resolve(e,scope); return v==null?"":String(v); }); }
+  function parseHTML(html){ const t=document.createElement("template"); t.innerHTML=html; return t.content; }
+
+  function expand(parent, scope){ const kids=[].slice.call(parent.childNodes); for(const c of kids) handle(c, parent, scope); }
+  function handle(node, parent, scope){
+    if(node.nodeType===3){ textBind(node, scope); return; }
+    if(node.nodeType!==1) return;
+    const tag=node.tagName.toLowerCase();
+    if(tag==="sc-for"){ expandFor(node, parent, scope); return; }
+    if(tag==="sc-if"){ expandIf(node, parent, scope); return; }
+    bindAttrs(node, scope);
+    expand(node, scope);
+  }
+  function expandFor(node, parent, scope){
+    const arr=resolve(stripBind(node.getAttribute("list")), scope)||[];
+    const as=node.getAttribute("as")||"it";
+    const tmpl=[].slice.call(node.childNodes);
+    for(const item of arr){
+      const cs=Object.assign({}, scope); cs[as]=item;
+      for(const tn of tmpl){ const c=tn.cloneNode(true); parent.insertBefore(c,node); handle(c,parent,cs); }
+    }
+    parent.removeChild(node);
+  }
+  function expandIf(node, parent, scope){
+    const cond=resolve(stripBind(node.getAttribute("value")), scope);
+    if(cond){ const t=[].slice.call(node.childNodes); for(const tn of t){ parent.insertBefore(tn,node); handle(tn,parent,scope); } }
+    parent.removeChild(node);
+  }
+  function textBind(node, scope){
+    const s=node.nodeValue; if(!s || s.indexOf("{{")<0) return;
+    const whole=/^\s*{{\s*([^{}]+?)\s*}}\s*$/.exec(s);
+    if(whole){
+      const v=resolve(whole[1], scope);
+      if(v && typeof v==="object" && "__html" in v){ node.parentNode.insertBefore(parseHTML(v.__html), node); node.parentNode.removeChild(node); return; }
+      node.nodeValue = v==null?"":String(v); return;
+    }
+    node.nodeValue = interp(s, scope);
+  }
+  function bindAttrs(el, scope){
+    const attrs=[].slice.call(el.attributes);
+    for(const {name, value} of attrs){
+      const ln=name.toLowerCase();
+      if(ln.indexOf("on")===0 && ln.length>2 && value.indexOf("{{")>=0){
+        const fn=resolve(stripBind(value), scope); el.removeAttribute(name);
+        if(typeof fn==="function") el.addEventListener(ln.slice(2), fn);
+      } else if(ln==="ref"){
+        const fn=resolve(stripBind(value), scope); el.removeAttribute(name);
+        if(typeof fn==="function") fn(el);
+      } else if(ln==="style-hover" || ln==="style-focus" || ln==="style-focus-within"){
+        const extra=interp(value, scope); el.removeAttribute(name);
+        if(!el.hasAttribute("data-base-style")) el.setAttribute("data-base-style", el.getAttribute("style")||"");
+        const evs = ln==="style-hover" ? ["mouseenter","mouseleave"] : ["focusin","focusout"];
+        el.addEventListener(evs[0], ()=>el.setAttribute("style",(el.getAttribute("data-base-style")||"")+";"+extra));
+        el.addEventListener(evs[1], ()=>el.setAttribute("style",(el.getAttribute("data-base-style")||"")));
+      } else if(value.indexOf("{{")>=0){
+        const whole=/^{{\s*([^{}]+?)\s*}}$/.exec(value.trim());
+        if(whole){
+          const v=resolve(whole[1], scope);
+          if(ln==="value" && (el.tagName==="INPUT"||el.tagName==="TEXTAREA")){ el.value=v==null?"":String(v); el.removeAttribute(name); }
+          else if(ln==="disabled"||ln==="hidden"||ln==="checked"||ln==="selected"){ if(v){ el.setAttribute(ln,""); } else { el.removeAttribute(ln); } if(ln==="disabled") el.disabled=!!v; if(ln==="selected") el.selected=!!v; }
+          else { el.setAttribute(name, v==null?"":String(v)); }
+        } else {
+          el.setAttribute(name, interp(value, scope));
+        }
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------- render + focus preservation
+  function doRender(){
+    const V=computeV();
+    const frag=tpl.content.cloneNode(true);
+    expand(frag, V);
+
+    const a=document.activeElement; let keep=null, ss=null, se=null;
+    if(a && root.contains(a) && a.getAttribute && a.getAttribute("data-keep")){ keep=a.getAttribute("data-keep"); try{ ss=a.selectionStart; se=a.selectionEnd; }catch(e){} }
+    const oldCS=root.querySelector('[data-keep="chatscroll"]'); let csTop=null, atBottom=false;
+    if(oldCS){ csTop=oldCS.scrollTop; atBottom=(oldCS.scrollHeight-oldCS.clientHeight-oldCS.scrollTop)<8; }
+
+    root.textContent="";
+    root.appendChild(frag);
+
+    if(keep){ const n=root.querySelector('[data-keep="'+keep+'"]'); if(n){ n.focus(); if(ss!=null){ try{ n.setSelectionRange(ss,se); }catch(e){} } } }
+    const newCS=root.querySelector('[data-keep="chatscroll"]');
+    if(newCS && csTop!=null){ newCS.scrollTop = atBottom ? newCS.scrollHeight : csTop; }
+  }
+
+  // ---------------------------------------------------------------- data sync (SSE + fallback)
+  function loadState(){
+    fetch("/api/state").then(r=>{ if(r.status===401){ location.reload(); return null; } return r.json(); })
+      .then(d=>{ if(!d) return;
+        const sig=JSON.stringify([d.items,d.devices,d.activity,d.chat,d.stats]);
+        if(sig===lastSig) return;
+        lastSig=sig;
+        setState({ items:d.items||[], devices:d.devices||[], activity:d.activity||[], chat:d.chat||[],
+                   me:d.me||"", remote:!!d.remote, stats:d.stats||null });
+        if(state.tab==="chat") setTimeout(scrollChat,40);
+      }).catch(()=>{});
+  }
+  function startSync(){
+    if(window.EventSource){
+      try{
+        sse=new EventSource("/api/events");
+        sse.onmessage=()=>loadState();
+        sse.onerror=()=>{ /* browser auto-reconnects; keep a slow poll as belt & braces */ };
+        pollTimer=setInterval(loadState, 15000);
+        return;
+      }catch(e){}
+    }
+    pollTimer=setInterval(loadState, 2000);
+  }
+
+  // ---------------------------------------------------------------- init
+  (function init(){
+    const dark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+    let saved=null; try{ saved=localStorage.getItem("dz-theme"); }catch(e){}
+    document.documentElement.dataset.theme = saved || (dark?"dark":"light");
+    state.theme = document.documentElement.dataset.theme;
+    document.addEventListener("paste", onPaste);
+    doRender();
+    loadState();
+    startSync();
+  })();
+})();
+
+</script>
+</body>
+</html>

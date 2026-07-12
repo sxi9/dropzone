@@ -1,0 +1,3 @@
+Flask>=3.0
+qrcode>=7.4
+websockify>=0.11

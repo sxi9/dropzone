@@ -1,0 +1,14 @@
+[Unit]
+Description=Dropzone - home network share point
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=saibala
+WorkingDirectory=/home/saibala/Downloads/dropzone
+ExecStart=/home/saibala/Downloads/dropzone/venv/bin/python /home/saibala/Downloads/dropzone/app.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

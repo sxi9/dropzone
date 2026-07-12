@@ -1,0 +1,14 @@
+[Unit]
+Description=x11vnc screen server for Dropzone
+After=display-manager.service
+
+[Service]
+User=saibala
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/home/saibala/.Xauthority
+ExecStart=/usr/bin/x11vnc -display :0 -localhost -forever -shared -nopw -quiet
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=graphical.target

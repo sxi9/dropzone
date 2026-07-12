@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Dropzone · Screen</title>
+<style>
+  :root{ --ink:#EAF1F5; --soft:#9eb0bf; --signal:#2ad6c3; --pop:#F0744A; --bg:#080e16; --paper:rgba(38,54,72,.6); --line:rgba(255,255,255,.14); }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overflow:hidden}
+  #bar{position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:20;display:flex;align-items:center;gap:8px;
+    background:var(--paper);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border:1px solid var(--line);
+    padding:7px 10px;border-radius:999px;box-shadow:0 18px 44px -22px rgba(0,0,0,.8);transition:opacity .25s}
+  #bar.faded{opacity:.25}
+  #bar:hover{opacity:1}
+  #bar b{font-family:ui-monospace,Menlo,monospace;font-size:12px;letter-spacing:.18em;text-transform:uppercase;padding:0 6px;color:var(--signal)}
+  #bar .st{font-size:12px;color:var(--soft);padding-right:4px}
+  #bar button,#bar a{border:1px solid var(--line);background:transparent;color:var(--ink);font-size:12.5px;padding:7px 12px;border-radius:999px;cursor:pointer;text-decoration:none;line-height:1}
+  #bar button:hover,#bar a:hover{border-color:var(--signal);color:var(--signal)}
+  #screen{position:fixed;inset:0}
+  #msg{position:fixed;inset:0;display:grid;place-items:center;text-align:center;padding:24px;z-index:10}
+  #msg .card{background:var(--paper);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border:1px solid var(--line);border-radius:22px;padding:30px 28px;max-width:560px;box-shadow:0 26px 64px -28px rgba(0,0,0,.85)}
+  #msg h2{margin:0 0 6px;font-size:19px}
+  #msg p{margin:0 0 14px;color:var(--soft);font-size:14px;line-height:1.55}
+  #msg pre{background:rgba(0,0,0,.35);border:1px solid var(--line);border-radius:12px;padding:14px;text-align:left;font-size:12.5px;line-height:1.7;overflow:auto;color:var(--signal)}
+  #msg button{margin-top:10px;border:0;background:var(--signal);color:#06231f;font-weight:600;font-size:14px;padding:11px 22px;border-radius:11px;cursor:pointer}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--pop)}
+  .dot.on{background:var(--signal);box-shadow:0 0 8px 1px var(--signal)}
+</style>
+</head>
+<body>
+<div id="bar" class="">
+  <span class="dot" id="dot"></span>
+  <b>Screen</b>
+  <span class="st" id="st">connecting…</span>
+  <button id="keys" title="Send Ctrl+Alt+Del">Ctrl·Alt·Del</button>
+  <button id="fs">Fullscreen</button>
+  <a href="/">Back to Dropzone</a>
+</div>
+<div id="screen"></div>
+<div id="msg" hidden>
+  <div class="card">
+    <h2 id="msgTitle">Screen sharing isn't running yet</h2>
+    <p id="msgBody">One-time setup on the laptop — install the screen server and start it:</p>
+    <pre id="msgCmd">sudo apt install x11vnc
+x11vnc -display :0 -localhost -forever -shared -nopw -bg</pre>
+    <p style="font-size:12.5px">(<b>-localhost</b> keeps the raw VNC port off your network — only Dropzone's bridge can reach it. Add <code>-passwd yourpass</code> if you want a VNC password too.)</p>
+    <button id="retry">Try again</button>
+  </div>
+</div>
+
+<script type="module">
+  import RFB from "/static/novnc/core/rfb.js";
+
+  const st = document.getElementById("st"), dot = document.getElementById("dot");
+  const msg = document.getElementById("msg"), bar = document.getElementById("bar");
+  let rfb = null, fadeTimer = null;
+
+  function fadeBarSoon(){ clearTimeout(fadeTimer); bar.classList.remove("faded"); fadeTimer = setTimeout(()=>bar.classList.add("faded"), 2500); }
+  document.addEventListener("mousemove", fadeBarSoon);
+  document.addEventListener("touchstart", fadeBarSoon);
+
+  async function status(){
+    try{ const r = await fetch("/api/screen-status"); return await r.json(); }
+    catch(e){ return {vnc:false, bridge:false, ws_port:6080}; }
+  }
+
+  function connect(port){
+    const proto = location.protocol === "https:" ? "wss" : "ws";
+    const url = proto + "://" + location.hostname + ":" + port;
+    rfb = new RFB(document.getElementById("screen"), url, {});
+    rfb.scaleViewport = true;
+    rfb.resizeSession = false;
+    rfb.addEventListener("connect", ()=>{ st.textContent = "live"; dot.classList.add("on"); msg.hidden = true; fadeBarSoon(); });
+    rfb.addEventListener("disconnect", (e)=>{
+      st.textContent = "disconnected"; dot.classList.remove("on");
+      showSetup(e.detail && e.detail.clean ? "Disconnected" : "Couldn't reach the screen");
+    });
+  }
+
+  function showSetup(title){
+    document.getElementById("msgTitle").textContent = title || "Screen sharing isn't running yet";
+    msg.hidden = false;
+  }
+
+  async function boot(){
+    st.textContent = "checking…";
+    const s = await status();
+    if(!s.vnc){ st.textContent = "not running"; showSetup("Screen sharing isn't running yet"); return; }
+    if(!s.bridge){ st.textContent = "bridge down"; showSetup("The bridge isn't running — restart Dropzone (pip install websockify)"); return; }
+    msg.hidden = true;
+    connect(s.ws_port);
+  }
+
+  document.getElementById("retry").onclick = ()=>{ if(rfb){ try{rfb.disconnect();}catch(e){} rfb=null; } boot(); };
+  document.getElementById("fs").onclick = ()=>{ const el=document.documentElement; if(document.fullscreenElement) document.exitFullscreen(); else el.requestFullscreen && el.requestFullscreen(); };
+  document.getElementById("keys").onclick = ()=>{ if(rfb) rfb.sendCtrlAltDel(); };
+
+  boot();
+</script>
+</body>
+</html>

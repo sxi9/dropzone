@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dropzone · locked</title>
+<style>
+  body{margin:0;min-height:100dvh;display:grid;place-items:center;background:#080e16;color:#EAF1F5;
+    font-family:system-ui,-apple-system,sans-serif;padding:24px}
+  .box{background:rgba(38,54,72,.46);backdrop-filter:blur(22px);border:1px solid rgba(255,255,255,.14);
+    border-radius:20px;padding:34px 30px;width:100%;max-width:360px}
+  .brand{font-family:ui-monospace,Menlo,monospace;font-weight:700;letter-spacing:.22em;font-size:14px;color:#2ad6c3;text-transform:uppercase}
+  h1{font-size:20px;margin:14px 0 4px}p{margin:0 0 22px;color:#9eb0bf;font-size:14px}
+  input{width:100%;font-size:18px;padding:13px 14px;border:1px solid rgba(255,255,255,.14);border-radius:11px;
+    background:transparent;color:#EAF1F5;font-family:ui-monospace,Menlo,monospace;letter-spacing:.3em;text-align:center;box-sizing:border-box}
+  input:focus{outline:2px solid #2ad6c3;border-color:transparent}
+  button{margin-top:14px;width:100%;font-size:15px;font-weight:600;padding:13px;border:0;border-radius:11px;background:#2ad6c3;color:#06231f;cursor:pointer}
+  .err{color:#F0744A;font-size:13px;margin-top:12px;min-height:18px}
+</style></head>
+<body>
+  <form class="box" method="post" autocomplete="off">
+    <div class="brand">◇ dropzone</div>
+    <h1>This drop point is locked</h1>
+    <p>Enter the shared PIN to open it.</p>
+    <input name="pin" type="password" inputmode="numeric" autofocus placeholder="••••">
+    <button type="submit">Unlock</button>
+    <div class="err">{{ error or "" }}</div>
+  </form>
+</body></html>
