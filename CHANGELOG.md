@@ -4,7 +4,8 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
-- Nothing yet — open an issue or PR to start the next entry.
+### Fixed
+- **Copy buttons on notes and share links** now work over plain HTTP on the LAN. The Clipboard API is only available in secure contexts (HTTPS or localhost), so the old code silently did nothing while still showing "Copied". Added an `execCommand("copy")` fallback and an honest toast when the browser blocks copying.
 
 ## [5.0.0] — Home hub release
 

@@ -625,8 +625,21 @@ x11vnc -display :0 -localhost \
   // ---------------------------------------------------------------- item ops
   function deleteItem(id, kind){ fetch("/api/item/"+kind+"/"+id,{method:"DELETE"}).then(()=>{ toast("Deleted"); loadState(); }).catch(()=>{}); }
   function pinItem(id, kind){ post("/api/pin/"+kind+"/"+id).then(()=>loadState()).catch(()=>{}); }
-  function copyText(t){ try{ navigator.clipboard.writeText(t); }catch(e){} toast("Copied to clipboard"); }
-  function copyShare(url){ copyText(location.origin+url); toast("Share link copied"); }
+  function copyFallback(t){
+    const ta=document.createElement("textarea");
+    ta.value=t; ta.setAttribute("readonly",""); ta.style.position="fixed"; ta.style.top="0"; ta.style.left="0"; ta.style.opacity="0";
+    document.body.appendChild(ta); ta.focus(); ta.select(); ta.setSelectionRange(0, t.length);
+    let ok=false; try{ ok=document.execCommand("copy"); }catch(e){ ok=false; }
+    document.body.removeChild(ta); return ok;
+  }
+  function copyText(t, msg){
+    t=(t==null)?"":String(t); msg=msg||"Copied to clipboard";
+    const done=(ok)=>toast(ok?msg:"Copy blocked by browser (needs HTTPS or localhost); select the text manually");
+    if(navigator.clipboard && window.isSecureContext){
+      navigator.clipboard.writeText(t).then(()=>done(true)).catch(()=>done(copyFallback(t)));
+    } else { done(copyFallback(t)); }
+  }
+  function copyShare(url){ copyText(location.origin+url, "Share link copied"); }
   function revealBurn(id){
     post("/api/reveal/"+id).then(r=>r.json()).then(d=>{
       if(d.content!=null){ setState({preview:{kind:"burn", name:"Secret note"}, previewText:d.content}); loadState(); }
