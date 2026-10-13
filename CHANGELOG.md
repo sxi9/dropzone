@@ -7,6 +7,7 @@ All notable changes to this project are documented here.
 ### Added
 - **Admin and user accounts.** `python app.py set-password admin|user` creates salted PBKDF2 (600k rounds) password hashes in `data/users.json`; the page now asks for a username and password. Users can browse, upload, share text, chat and delete their own items. Admins additionally get the storage bar and panel, cleanup, server-side URL fetch, device renaming for any device, deleting anything, and the remote screen viewer.
 - `DROPZONE_ADMIN_PASSWORD` / `DROPZONE_USER_PASSWORD` to bootstrap accounts from the environment, `DROPZONE_SESSION_HOURS`, `DROPZONE_HTTPS`, `DROPZONE_TRUST_PROXY`, `DROPZONE_PUBLIC_SHARE`.
+- **Password** button in the header: change your own password from the UI (asks for the current one; signs out your other devices).
 - README section on hosting through Tailscale.
 
 ### Security

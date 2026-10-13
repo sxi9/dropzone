@@ -117,7 +117,7 @@ python app.py set-password user      # share & browse only
 python app.py users                  # list accounts
 ```
 
-The moment an account exists the page asks for a username and password. Passwords are stored as salted PBKDF2 hashes in `data/users.json`; changing one logs that account out everywhere.
+The moment an account exists the page asks for a username and password. Either account can change its own password later with the **Password** button in the header. Passwords are stored as salted PBKDF2 hashes in `data/users.json`; changing one logs that account out everywhere.
 
 | | user | admin |
 |---|---|---|

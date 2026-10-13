@@ -453,6 +453,30 @@ def login():
     return render_template("login.html", error=error,
                            has_admin="admin" in users, has_user=("user" in users) or bool(PIN))
 
+@app.route("/api/password", methods=["POST"])
+@require_auth
+def api_password():
+    """Change the password of the signed-in account (requires the current password)."""
+    u = current_user()
+    if not u["name"]:
+        return jsonify(error="no accounts exist yet - create one with: python app.py set-password admin"), 400
+    d = request.json or {}
+    cur = d.get("current") or ""; new = d.get("new") or ""
+    if not check_password(u["name"], cur):
+        login_failed(client_ip())
+        return jsonify(error="current password is wrong"), 403
+    try:
+        role = set_password(u["name"], new, u["role"])
+    except ValueError as e:
+        return jsonify(error=str(e)), 400
+    rec = load_users()[u["name"]]
+    session["v"] = int(rec["ver"]); session["r"] = role     # keep this session alive; all others are logged out
+    with db() as conn:
+        who = touch_device(conn)
+        log_activity(conn, "join", f"{who} changed the {u['name']} password", client_ip())
+    bump()
+    return jsonify(ok=True)
+
 @app.route("/logout", methods=["POST"])
 def logout():
     session.clear()

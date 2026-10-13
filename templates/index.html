@@ -73,6 +73,7 @@
     </button>
     <sc-if value="{{ authOn }}">
     <span title="Signed in as" style="font-family:ui-monospace,Menlo,monospace;font-size:11.5px;letter-spacing:.06em;color:var(--signal);border:1px solid color-mix(in srgb,var(--signal) 40%,transparent);padding:6px 10px;border-radius:999px">{{ userTag }}</span>
+    <button onclick="{{ changePassword }}" title="Change my password" style="border:1px solid var(--line);background:var(--paper);backdrop-filter:var(--glass);-webkit-backdrop-filter:var(--glass);color:var(--ink);font-size:13px;padding:8px 12px;border-radius:999px;cursor:pointer;line-height:1" style-hover="border-color:var(--signal);color:var(--signal)">Password</button>
     <button onclick="{{ doLogout }}" title="Lock" style="border:1px solid var(--line);background:var(--paper);backdrop-filter:var(--glass);-webkit-backdrop-filter:var(--glass);color:var(--ink);font-size:13px;padding:8px 14px;border-radius:999px;cursor:pointer;line-height:1;box-shadow:var(--shadow)" style-hover="border-color:var(--signal);color:var(--signal)">Lock</button>
     </sc-if>
   </header>
@@ -731,6 +732,15 @@ x11vnc -display :0 -localhost \
   function openQR(){ qrNonce=Date.now(); setState({qrOpen:true}); }
   function closeQR(){ setState({qrOpen:false}); }
   function onQrBackdrop(e){ if(e.target===e.currentTarget) closeQR(); }
+  function changePassword(){
+    const cur=prompt("Current password:"); if(cur==null) return;
+    const nw=prompt("New password (at least 6 characters):"); if(nw==null) return;
+    const again=prompt("Repeat the new password:"); if(again==null) return;
+    if(nw!==again){ toast("New passwords don't match"); return; }
+    post("/api/password",{current:cur,new:nw}).then(r=>r.json()).then(d=>{
+      toast(d.ok ? "Password changed - other devices are signed out" : (d.error||"Couldn't change password"));
+    }).catch(()=>toast("Couldn't change password"));
+  }
   function doLogout(){ const f=document.createElement("form"); f.method="POST"; f.action="/logout"; document.body.appendChild(f); f.submit(); }
 
   function pillStyle(on){ return "border:0;background:"+(on?"var(--paper-solid)":"transparent")+";color:"+(on?"var(--ink)":"var(--ink-soft)")+";font-size:13px;padding:6px 13px;border-radius:999px;cursor:pointer;font-weight:"+(on?"600":"500")+";"+(on?"box-shadow:0 2px 8px -2px rgba(16,38,58,.28)":""); }
@@ -861,7 +871,7 @@ x11vnc -display :0 -localhost \
       bulkDelete, bulkZip,
       query:s.query, onSearch,
       chatDraft:s.chatDraft, onChatInput, onChatKey, sendChat, chatDisabled:!s.chatDraft.trim(),
-      toggleTheme, openQR, closeQR, onQrBackdrop, doLogout,
+      toggleTheme, openQR, closeQR, onQrBackdrop, doLogout, changePassword,
       qrOpen:s.qrOpen, qrEl:{__html:'<img src="/qr.svg?'+qrNonce+'" width="200" height="200" alt="QR code" style="display:block;width:200px;height:200px">'},
       toastMsg:s.toastMsg,
       upActive:up.active, upProgress:Math.round(up.progress), upDone:up.progress>=100, upGoing:up.progress<100,
