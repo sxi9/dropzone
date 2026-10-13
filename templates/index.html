@@ -71,7 +71,10 @@
     <button onclick="{{ toggleTheme }}" title="Toggle theme" style="display:inline-flex;align-items:center;border:1px solid var(--line);background:var(--paper);backdrop-filter:var(--glass);-webkit-backdrop-filter:var(--glass);color:var(--ink);padding:8px 11px;border-radius:999px;cursor:pointer;box-shadow:var(--shadow)" style-hover="border-color:var(--signal);color:var(--signal)">
       {{ themeIcon }}
     </button>
+    <sc-if value="{{ authOn }}">
+    <span title="Signed in as" style="font-family:ui-monospace,Menlo,monospace;font-size:11.5px;letter-spacing:.06em;color:var(--signal);border:1px solid color-mix(in srgb,var(--signal) 40%,transparent);padding:6px 10px;border-radius:999px">{{ userTag }}</span>
     <button onclick="{{ doLogout }}" title="Lock" style="border:1px solid var(--line);background:var(--paper);backdrop-filter:var(--glass);-webkit-backdrop-filter:var(--glass);color:var(--ink);font-size:13px;padding:8px 14px;border-radius:999px;cursor:pointer;line-height:1;box-shadow:var(--shadow)" style-hover="border-color:var(--signal);color:var(--signal)">Lock</button>
+    </sc-if>
   </header>
 
   <div id="dz-grid" style="display:grid;grid-template-columns:minmax(0,1fr) 372px;gap:28px;align-items:start">
@@ -98,7 +101,7 @@
           <button onclick="{{ shareNote }}" disabled="{{ noteDisabled }}" style="border:0;background:var(--ink);color:var(--canvas);font-weight:600;font-size:14px;padding:11px 17px;border-radius:12px;cursor:pointer;white-space:nowrap" style-hover="background:var(--signal)">Share text</button>
         </div>
         <div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap">
-          <button onclick="{{ toggleBurn }}" style="{{ burnChip }}">{{ burnIcon }} Burn after read</button>
+          <button onclick="{{ toggleBurn }}" style="{{ burnChip }}"><span style="display:inline-flex">{{ burnIcon }}</span> Burn after read</button>
           <button onclick="{{ toggleExpire }}" style="{{ expireChip }}">{{ clockLabel }}</button>
           <sc-if value="{{ showFetchUrl }}">
             <button onclick="{{ fetchUrl }}" style="display:inline-flex;align-items:center;gap:6px;border:1px solid var(--signal);background:color-mix(in srgb,var(--signal) 14%,transparent);color:var(--signal);font-size:12px;padding:5px 11px;border-radius:999px;cursor:pointer">{{ globeIcon }} Fetch this URL to the server</button>
@@ -176,7 +179,9 @@
                 <span style="font-family:ui-monospace,Menlo,monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--pop);padding:2px 7px;border:1px solid color-mix(in srgb,var(--pop) 40%,transparent);border-radius:999px">burn</span>
                 <span style="flex:1"></span>
                 <span style="font-size:11.5px;color:var(--ink-soft)">{{ it.whenText }}</span>
+                <sc-if value="{{ it.canDelete }}">
                 <button onclick="{{ it.delHandler }}" title="Delete" style="border:0;background:transparent;color:var(--ink-soft);cursor:pointer;padding:5px;border-radius:8px;display:inline-flex" style-hover="color:var(--pop);background:var(--paper-2)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"></path></svg></button>
+                </sc-if>
               </div>
             </sc-if>
 
@@ -190,7 +195,9 @@
                 <span style="flex:1"></span>
                 <span style="font-size:11.5px;color:var(--ink-soft)">{{ it.whenText }}</span>
                 <button onclick="{{ it.copyHandler }}" title="Copy" style="border:0;background:transparent;color:var(--ink-soft);cursor:pointer;padding:5px;border-radius:8px;display:inline-flex" style-hover="color:var(--signal);background:var(--paper-2)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"></rect><path d="M5 15V5a2 2 0 0 1 2-2h10"></path></svg></button>
+                <sc-if value="{{ it.canDelete }}">
                 <button onclick="{{ it.delHandler }}" title="Delete" style="border:0;background:transparent;color:var(--ink-soft);cursor:pointer;padding:5px;border-radius:8px;display:inline-flex" style-hover="color:var(--pop);background:var(--paper-2)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"></path></svg></button>
+                </sc-if>
               </div>
             </sc-if>
 
@@ -210,7 +217,9 @@
                   <button onclick="{{ it.shareHandler }}" title="Copy share link" style="border:0;background:transparent;color:var(--ink-soft);cursor:pointer;padding:5px;border-radius:8px;display:inline-flex" style-hover="color:var(--signal);background:var(--paper-2)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"></path><path d="M16 6l-4-4-4 4"></path><path d="M12 2v13"></path></svg></button>
                 </sc-if>
                 <a href="{{ it.downHref }}" onclick="{{ it.stop }}" title="Download" style="border:0;background:transparent;color:var(--ink-soft);cursor:pointer;padding:5px;border-radius:8px;display:inline-flex" style-hover="color:var(--signal);background:var(--paper-2)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 4v12M7 11l5 5 5-5M5 20h14"></path></svg></a>
+                <sc-if value="{{ it.canDelete }}">
                 <button onclick="{{ it.delHandler }}" title="Delete" style="border:0;background:transparent;color:var(--ink-soft);cursor:pointer;padding:5px;border-radius:8px;display:inline-flex" style-hover="color:var(--pop);background:var(--paper-2)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"></path></svg></button>
+                </sc-if>
               </div>
             </sc-if>
           </div>
@@ -228,7 +237,9 @@
         <span>Reach this page from any device on your network at</span>
         <span style="font-family:ui-monospace,Menlo,monospace;color:var(--ink)">{{ hostAddr }}</span>
         <span style="flex:1 1 auto"></span>
+        <sc-if value="{{ isAdmin }}">
         <button onclick="{{ openStorage }}" style="border:0;background:transparent;color:var(--ink-soft);font-size:12.5px;cursor:pointer;text-decoration:underline;text-underline-offset:3px" style-hover="color:var(--signal)">{{ storageText }}</button>
+        </sc-if>
       </footer>
     </main>
 
@@ -239,12 +250,16 @@
           <b style="font-size:15px">On this network</b>
         </div>
         <div style="margin-top:4px;color:var(--ink-soft);font-size:12.5px">{{ deviceCount }} devices · {{ activeCount }} active now</div>
+        <sc-if value="{{ isAdmin }}">
         <div onclick="{{ openStorage }}" title="Storage details" style="margin-top:10px;height:5px;border-radius:99px;background:var(--paper-2);overflow:hidden;cursor:pointer"><div style="height:100%;width:{{ storagePct }}%;background:linear-gradient(90deg,var(--signal),var(--pop));border-radius:99px"></div></div>
+        </sc-if>
         <div style="display:flex;gap:4px;background:var(--paper-2);border:1px solid var(--line-soft);padding:4px;border-radius:999px;margin-top:14px">
           <button onclick="{{ tabDevices }}" style="{{ tabDev }}">Devices</button>
           <button onclick="{{ tabActivity }}" style="{{ tabAct }}">Activity</button>
           <button onclick="{{ tabChat }}" style="{{ tabChatStyle }}">Chat</button>
+          <sc-if value="{{ isAdmin }}">
           <button onclick="{{ tabScreen }}" style="{{ tabScr }}">Screen</button>
+          </sc-if>
         </div>
       </div>
 
@@ -487,7 +502,7 @@ x11vnc -display :0 -localhost \
     tab:"devices", qrOpen:false, toastMsg:null, isDragging:false,
     upload:{active:false, progress:0, title:"", sub:"", count:0},
     items:[], devices:[], activity:[], chat:[],
-    me:"", remote:false, stats:null,
+    me:"", remote:false, stats:null, user:"", role:"", admin:false, authOn:false,
     selecting:false, selected:{},
     preview:null, previewText:"",
     noteBurn:false, noteExpire:false, target:"",
@@ -746,7 +761,7 @@ x11vnc -display :0 -localhost \
         whenText:fmtWhen(it.created), label:it.label||"", hasLabel:!!it.label,
         pinned:!!it.pinned, pinColor: it.pinned?"var(--pop)":"var(--ink-soft)",
         forYou:!!it.mine_target, targeted:!!it.target,
-        hasShare:!!it.share_url,
+        hasShare:!!it.share_url, canDelete:!!it.can_delete,
         selecting:s.selecting, checked:!!s.selected[key],
         checkBg: s.selected[key]?"var(--signal)":"color-mix(in srgb,var(--paper-solid) 80%,transparent)",
         openHandler:()=> s.selecting ? toggleSelect(key) : (it.kind==="file" ? openPreview(it) : null),
@@ -765,7 +780,7 @@ x11vnc -display :0 -localhost \
       statusText:d.you?"this device":(d.status==="active"?"active":"idle"),
       dotColor:d.status==="active"?"var(--signal)":"var(--ink-soft)",
       renaming:s.renaming===d.ip, notRenaming:s.renaming!==d.ip,
-      renameHandler:()=>startRename(d),
+      renameHandler:(s.admin||d.you)?()=>startRename(d):null,
       renameKey:(e)=>onRenameKey(e, d.ip),
       renameCommit:()=>commitRename(d.ip),
     }));
@@ -814,6 +829,7 @@ x11vnc -display :0 -localhost \
       feedItems, devices, activity, chat, digest, digFilesText, digNotesText, digChatText,
       showEmpty:s.items.length===0, isDragging:s.isDragging,
       themeIcon:{__html: s.theme==="dark"?sunIcon:moonIcon},
+      isAdmin:s.admin, authOn:s.authOn, userTag:(s.user ? s.user+" · "+s.role : "signed in"),
       netTag: s.remote ? "remote · via secure tunnel" : "local · private · this network only",
       pillAll:pillStyle(s.filter==="all"), pillFile:pillStyle(s.filter==="file"), pillNote:pillStyle(s.filter==="note"), pillImage:pillStyle(s.filter==="image"),
       filterAll:()=>setFilter("all"), filterFile:()=>setFilter("file"), filterNote:()=>setFilter("note"), filterImage:()=>setFilter("image"),
@@ -824,7 +840,7 @@ x11vnc -display :0 -localhost \
       noteDraft:s.noteDraft, onNoteInput, shareNote, noteDisabled:!s.noteDraft.trim(),
       burnChip:chipStyle(s.noteBurn), expireChip:chipStyle(s.noteExpire), toggleBurn, toggleExpire,
       burnIcon:{__html:svg("flame",13)}, clockLabel:"Expires in 24h",
-      showFetchUrl:looksLikeUrl(s.noteDraft), fetchUrl, globeIcon:{__html:svg("globe",13)},
+      showFetchUrl:looksLikeUrl(s.noteDraft) && s.admin, fetchUrl, globeIcon:{__html:svg("globe",13)},
       recording:s.recording, toggleRecord,
       micIcon:{__html: s.recording?svg("stop",16):svg("mic",16)},
       micStyle:"border:1px solid "+(s.recording?"var(--pop)":"var(--line)")+";background:"+(s.recording?"color-mix(in srgb,var(--pop) 16%,transparent)":"transparent")+";color:"+(s.recording?"var(--pop)":"var(--ink-soft)")+";width:42px;height:42px;border-radius:12px;cursor:pointer;display:grid;place-items:center;flex:none",
@@ -960,11 +976,12 @@ x11vnc -display :0 -localhost \
   function loadState(){
     fetch("/api/state").then(r=>{ if(r.status===401){ location.reload(); return null; } return r.json(); })
       .then(d=>{ if(!d) return;
-        const sig=JSON.stringify([d.items,d.devices,d.activity,d.chat,d.stats]);
+        const sig=JSON.stringify([d.items,d.devices,d.activity,d.chat,d.stats,d.role,d.auth]);
         if(sig===lastSig) return;
         lastSig=sig;
         setState({ items:d.items||[], devices:d.devices||[], activity:d.activity||[], chat:d.chat||[],
-                   me:d.me||"", remote:!!d.remote, stats:d.stats||null });
+                   me:d.me||"", remote:!!d.remote, stats:d.stats||null,
+                   user:d.user||"", role:d.role||"", admin:!!d.admin, authOn:!!d.auth });
         if(state.tab==="chat") setTimeout(scrollChat,40);
       }).catch(()=>{});
   }

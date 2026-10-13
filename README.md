@@ -81,8 +81,10 @@ It was built from scratch, iteration by iteration, into a genuinely full-feature
 
 ### 🔐 Private by design
 - 100% self-hosted — your data never touches a third-party server
-- Optional shared **PIN** to lock the whole drop zone
-- Runs entirely on your LAN; pair with [Tailscale](https://tailscale.com) if you ever want secure access from outside home
+- **Admin and user accounts** with salted PBKDF2 password hashes — users share and browse, admins also get the storage panel, cleanup, the screen viewer and the power to delete anything
+- Login throttling, HttpOnly/SameSite session cookies, origin checks on every write, and uploaded HTML served as a download so nothing can run in the app's origin
+- The remote-screen bridge only accepts connections carrying a signed admin ticket
+- Runs entirely on your LAN; pair with [Tailscale](https://tailscale.com) if you ever want secure access from outside home (see below)
 
 ---
 
@@ -104,8 +106,28 @@ python app.py
 You'll see:
 
 ```
-Dropzone running on http://0.0.0.0:8000  (PIN off, expiry off day(s))
+Dropzone v6 running on http://0.0.0.0:8000  (OPEN - no password! run: python app.py set-password admin; ...)
 ```
+
+Lock it down before anything else (each command prompts for a password twice):
+
+```bash
+python app.py set-password admin     # full control
+python app.py set-password user      # share & browse only
+python app.py users                  # list accounts
+```
+
+The moment an account exists the page asks for a username and password. Passwords are stored as salted PBKDF2 hashes in `data/users.json`; changing one logs that account out everywhere.
+
+| | user | admin |
+|---|---|---|
+| Browse the library, download, copy, pin, label, chat | ✓ | ✓ |
+| Upload files, share text, burn-after-read notes | ✓ | ✓ |
+| Delete items | own only | anything |
+| Rename devices | own device | any device |
+| Storage bar, largest files, one-tap cleanup | | ✓ |
+| Pull a URL into the drop zone (server-side fetch) | | ✓ |
+| Remote screen viewer | | ✓ |
 
 Find your machine's address with `hostname -I`, then open `http://<that-address>:8000` from **any device on the same Wi-Fi** — phone, laptop, tablet, doesn't matter. Tap **Add device** on the page for a QR code that makes onboarding the rest of your devices a five-second job.
 
@@ -129,7 +151,13 @@ Every setting is an environment variable — no config files to hand-edit.
 | Variable | Default | Description |
 |---|---|---|
 | `DROPZONE_PORT` | `8000` | Port the app listens on |
-| `DROPZONE_PIN` | *(none)* | Optional shared PIN to lock the drop zone |
+| `DROPZONE_ADMIN_PASSWORD` | *(none)* | Set/overwrite the `admin` password at startup (alternative to the CLI) |
+| `DROPZONE_USER_PASSWORD` | *(none)* | Set/overwrite the `user` password at startup |
+| `DROPZONE_PIN` | *(none)* | Legacy shared PIN — works as the `user` password until a user account is created |
+| `DROPZONE_SESSION_HOURS` | `24` | How long a login lasts |
+| `DROPZONE_HTTPS` | `0` | `1` marks cookies `Secure`; set it when Dropzone is served over HTTPS |
+| `DROPZONE_TRUST_PROXY` | `0` | `1` trusts `X-Forwarded-*` headers from a reverse proxy (Tailscale Serve, nginx, Caddy) |
+| `DROPZONE_PUBLIC_SHARE` | `0` | `1` lets `/s/<token>` share links work without logging in |
 | `DROPZONE_MAX_MB` | `2048` | Maximum upload size per file, in MB |
 | `DROPZONE_EXPIRE_DAYS` | `0` (never) | Auto-delete items older than N days |
 | `DROPZONE_DATA` | `./data` | Where uploaded files and the database live |
@@ -139,9 +167,31 @@ Every setting is an environment variable — no config files to hand-edit.
 Set them in `dropzone.service` under `[Service]`:
 
 ```ini
-Environment=DROPZONE_PIN=4729
+Environment=DROPZONE_SESSION_HOURS=72
 Environment=DROPZONE_EXPIRE_DAYS=30
 ```
+
+Prefer `python app.py set-password …` over the `*_PASSWORD` variables so the password never sits in a unit file.
+
+---
+
+## Access from outside home with Tailscale
+
+Dropzone never needs a port forward. Install [Tailscale](https://tailscale.com) on the host and on your phone/laptop, then either open `http://<tailscale-ip>:8000` directly, or let Tailscale terminate HTTPS for you:
+
+```bash
+sudo tailscale serve --bg 8000                # https://<host>.<tailnet>.ts.net  ->  Dropzone
+sudo tailscale serve --bg --https=6080 6080   # only if you use the screen viewer remotely
+```
+
+When you go through `tailscale serve`, tell Dropzone it is behind an HTTPS proxy:
+
+```ini
+Environment=DROPZONE_HTTPS=1
+Environment=DROPZONE_TRUST_PROXY=1
+```
+
+Keep the share point on your tailnet only (don't run `tailscale funnel` unless you mean to expose it to the whole internet), and make sure both accounts have strong passwords first.
 
 ---
 
@@ -159,7 +209,7 @@ sudo systemctl enable --now x11vnc
 
 Open the **Screen** tab in the sidebar — once the status dot turns green, tap **Open live screen**. Mouse, keyboard, and a Ctrl-Alt-Del button all work from your phone.
 
-> **Security note:** x11vnc is configured with `-localhost`, so the raw VNC port is never exposed to your network directly — only Dropzone's own bridge can reach it. Anyone who can already open your Dropzone page can use the screen viewer, so set a `DROPZONE_PIN` if that matters to you.
+> **Security note:** x11vnc is configured with `-localhost`, so the raw VNC port is never exposed to your network directly — only Dropzone's own bridge can reach it. The bridge itself (`dropzone_auth.py`) refuses any connection that doesn't carry a signed `dz_screen` ticket, which Dropzone only issues to a logged-in **admin** when they open the Screen tab. Users cannot see or reach the screen viewer at all.
 
 ---
 
@@ -200,10 +250,11 @@ Dropzone is deliberately low on moving parts — no build step, no framework loc
 
 ## Roadmap
 
-- [ ] Token-gated screen viewer (separate from the main PIN)
+- [x] Token-gated screen viewer (separate from the main login)
+- [x] Admin / user accounts
 - [ ] True folder browsing, not just labels
 - [ ] Native background photo backup (would need a companion mobile app)
-- [ ] Multi-user accounts with per-user visibility
+- [ ] Per-user visibility of items
 
 Have an idea? Open an issue — this project grows from exactly that kind of feedback.
 
@@ -215,9 +266,10 @@ Have an idea? Open an issue — this project grows from exactly that kind of fee
 
 | File | Purpose |
 |---|---|
-| `app.py` | The entire backend — routes, database, VNC bridge |
+| `app.py` | The entire backend — routes, database, accounts, VNC bridge, account CLI |
+| `dropzone_auth.py` | websockify auth plugin: lets only ticket-holding admins reach the screen bridge |
 | `templates/index.html` | The full UI: styles, markup, and frontend logic |
-| `templates/login.html` | PIN entry screen |
+| `templates/login.html` | Username / password sign-in screen |
 | `templates/screen.html` | Full-page remote screen viewer |
 | `static/novnc/` | Vendored noVNC client (screen viewer dependency) |
 | `dropzone.service` | systemd unit to run Dropzone 24/7 |

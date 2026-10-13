@@ -9,6 +9,10 @@ WorkingDirectory=/home/saibala/Downloads/dropzone
 ExecStart=/home/saibala/Downloads/dropzone/venv/bin/python /home/saibala/Downloads/dropzone/app.py
 Restart=always
 RestartSec=3
+# Optional settings - see .env.example. Create accounts with `python app.py set-password admin`.
+#Environment=DROPZONE_SESSION_HOURS=24
+#Environment=DROPZONE_HTTPS=1
+#Environment=DROPZONE_TRUST_PROXY=1
 
 [Install]
 WantedBy=multi-user.target

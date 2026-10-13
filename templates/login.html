@@ -1,27 +1,54 @@
 <!DOCTYPE html>
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Dropzone · locked</title>
+<title>Dropzone · sign in</title>
 <style>
   body{margin:0;min-height:100dvh;display:grid;place-items:center;background:#080e16;color:#EAF1F5;
     font-family:system-ui,-apple-system,sans-serif;padding:24px}
   .box{background:rgba(38,54,72,.46);backdrop-filter:blur(22px);border:1px solid rgba(255,255,255,.14);
-    border-radius:20px;padding:34px 30px;width:100%;max-width:360px}
+    border-radius:20px;padding:34px 30px;width:100%;max-width:360px;box-sizing:border-box}
   .brand{font-family:ui-monospace,Menlo,monospace;font-weight:700;letter-spacing:.22em;font-size:14px;color:#2ad6c3;text-transform:uppercase}
   h1{font-size:20px;margin:14px 0 4px}p{margin:0 0 22px;color:#9eb0bf;font-size:14px}
-  input{width:100%;font-size:18px;padding:13px 14px;border:1px solid rgba(255,255,255,.14);border-radius:11px;
-    background:transparent;color:#EAF1F5;font-family:ui-monospace,Menlo,monospace;letter-spacing:.3em;text-align:center;box-sizing:border-box}
+  label{display:block;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#9eb0bf;margin:0 0 6px 2px}
+  input{width:100%;font-size:16px;padding:12px 14px;border:1px solid rgba(255,255,255,.14);border-radius:11px;
+    background:transparent;color:#EAF1F5;box-sizing:border-box;margin-bottom:14px}
   input:focus{outline:2px solid #2ad6c3;border-color:transparent}
-  button{margin-top:14px;width:100%;font-size:15px;font-weight:600;padding:13px;border:0;border-radius:11px;background:#2ad6c3;color:#06231f;cursor:pointer}
+  .roles{display:flex;gap:6px;margin:-4px 0 14px}
+  .roles button{flex:1;border:1px solid rgba(255,255,255,.14);background:transparent;color:#9eb0bf;font-size:12.5px;padding:7px;border-radius:999px;cursor:pointer}
+  .roles button.on{border-color:#2ad6c3;color:#2ad6c3;background:rgba(42,214,195,.12)}
+  .roles button[disabled]{opacity:.35;cursor:not-allowed}
+  button.go{width:100%;font-size:15px;font-weight:600;padding:13px;border:0;border-radius:11px;background:#2ad6c3;color:#06231f;cursor:pointer}
   .err{color:#F0744A;font-size:13px;margin-top:12px;min-height:18px}
+  .hint{color:#9eb0bf;font-size:12px;margin-top:14px;line-height:1.5}
 </style></head>
 <body>
-  <form class="box" method="post" autocomplete="off">
+  <form class="box" method="post" autocomplete="on">
     <div class="brand">◇ dropzone</div>
-    <h1>This drop point is locked</h1>
-    <p>Enter the shared PIN to open it.</p>
-    <input name="pin" type="password" inputmode="numeric" autofocus placeholder="••••">
-    <button type="submit">Unlock</button>
+    <h1>Sign in</h1>
+    <p>This drop point is private. Use the admin or user account.</p>
+    <div class="roles">
+      <button type="button" data-u="admin" {% if not has_admin %}disabled title="No admin account yet"{% endif %}>Admin</button>
+      <button type="button" data-u="user" {% if not has_user %}disabled title="No user account yet"{% endif %}>User</button>
+    </div>
+    <label for="u">Username</label>
+    <input id="u" name="username" type="text" autocapitalize="none" autocomplete="username" spellcheck="false" required
+           value="{{ 'admin' if has_admin and not has_user else 'user' if has_user and not has_admin else '' }}">
+    <label for="p">Password</label>
+    <input id="p" name="password" type="password" autocomplete="current-password" required autofocus>
+    <button class="go" type="submit">Unlock</button>
     <div class="err">{{ error or "" }}</div>
+    {% if not has_admin %}
+    <div class="hint">No admin account exists yet. On the server run<br><code>python app.py set-password admin</code></div>
+    {% endif %}
   </form>
+  <script>
+    (function(){
+      var u=document.getElementById("u"), p=document.getElementById("p");
+      var bs=document.querySelectorAll(".roles button");
+      function sync(){ bs.forEach(function(b){ b.classList.toggle("on", b.dataset.u===u.value.trim().toLowerCase()); }); }
+      bs.forEach(function(b){ b.addEventListener("click", function(){ if(b.disabled) return; u.value=b.dataset.u; sync(); p.focus(); }); });
+      u.addEventListener("input", sync); sync();
+      if(!u.value) u.focus();
+    })();
+  </script>
 </body></html>
