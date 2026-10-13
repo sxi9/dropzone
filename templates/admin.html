@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Dropzone · Admin</title>
+<style>
+  :root{
+    --canvas:#dfe7e4; --paper:rgba(255,255,255,.55); --paper-2:rgba(255,255,255,.38); --paper-solid:#FCFBF8;
+    --ink:#12273a; --ink-soft:#52647a; --line:rgba(255,255,255,.62); --line-soft:rgba(110,135,150,.22);
+    --signal:#0C8A7C; --pop:#E8633A; --warn:#d99a1e; --other:#8aa0ad;
+    --glass:saturate(165%) blur(22px); --shadow:0 22px 54px -30px rgba(16,38,58,.55);
+  }
+  html[data-theme="dark"]{
+    --canvas:#080e16; --paper:rgba(38,54,72,.46); --paper-2:rgba(70,92,114,.3); --paper-solid:#1b2836;
+    --ink:#EAF1F5; --ink-soft:#9eb0bf; --line:rgba(255,255,255,.14); --line-soft:rgba(255,255,255,.09);
+    --signal:#2ad6c3; --pop:#F0744A; --warn:#f0b64a; --other:#5b7382;
+    --shadow:0 26px 64px -28px rgba(0,0,0,.8);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--canvas);color:var(--ink);min-height:100dvh;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+  body::before{content:"";position:fixed;inset:-18%;z-index:-1;pointer-events:none;filter:blur(32px) saturate(125%);
+    background:radial-gradient(36vw 36vw at 16% 20%, color-mix(in srgb,var(--signal) 55%,transparent), transparent 60%),
+               radial-gradient(32vw 32vw at 84% 14%, color-mix(in srgb,var(--pop) 45%,transparent), transparent 60%),
+               radial-gradient(42vw 42vw at 76% 86%, color-mix(in srgb,var(--signal) 40%,transparent), transparent 62%)}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 20px 80px}
+  header{display:flex;align-items:center;gap:14px;padding:22px 2px 18px;flex-wrap:wrap}
+  .brand{font-family:ui-monospace,Menlo,monospace;font-weight:700;letter-spacing:.24em;text-transform:uppercase;font-size:15px}
+  .brand small{color:var(--signal);letter-spacing:.14em;margin-left:8px}
+  .pill{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);background:var(--paper);backdrop-filter:var(--glass);-webkit-backdrop-filter:var(--glass);color:var(--ink);font-size:13px;padding:8px 13px;border-radius:999px;cursor:pointer;text-decoration:none;line-height:1;box-shadow:var(--shadow)}
+  .pill:hover{border-color:var(--signal);color:var(--signal)}
+  .tabs{display:flex;gap:4px;background:var(--paper-2);border:1px solid var(--line-soft);padding:4px;border-radius:999px;width:max-content;margin:4px 0 22px}
+  .tabs button{border:0;background:transparent;color:var(--ink-soft);font-size:13.5px;font-weight:500;padding:8px 18px;border-radius:999px;cursor:pointer}
+  .tabs button.on{background:var(--paper-solid);color:var(--ink);font-weight:600;box-shadow:0 2px 8px -2px rgba(16,38,58,.28)}
+  .card{background:var(--paper);backdrop-filter:var(--glass);-webkit-backdrop-filter:var(--glass);border:1px solid var(--line);border-radius:22px;padding:22px;box-shadow:var(--shadow);margin-bottom:20px}
+  .card h2{margin:0 0 4px;font-size:17px}
+  .card .sub{margin:0 0 16px;color:var(--ink-soft);font-size:13px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin:16px 0}
+  .tile{background:var(--paper-2);border:1px solid var(--line-soft);border-radius:14px;padding:12px 14px}
+  .tile b{display:block;font-size:20px;margin-top:2px}
+  .tile span{font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft);font-family:ui-monospace,Menlo,monospace}
+  .meter{height:22px;border-radius:999px;background:var(--paper-2);border:1px solid var(--line-soft);overflow:hidden;display:flex}
+  .meter i{display:block;height:100%;transition:width .6s ease}
+  .meter .dz{background:linear-gradient(90deg,var(--signal),color-mix(in srgb,var(--signal) 60%,#fff))}
+  .meter .ot{background:var(--other)}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;margin-top:10px;font-size:12.5px;color:var(--ink-soft)}
+  .legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+  .pct{font-family:ui-monospace,Menlo,monospace;font-size:13px;color:var(--ink);margin-left:auto}
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  th{text-align:left;font-family:ui-monospace,Menlo,monospace;font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft);font-weight:600;padding:8px 10px;border-bottom:1px solid var(--line-soft)}
+  td{padding:9px 10px;border-bottom:1px solid var(--line-soft);vertical-align:middle}
+  tr:hover td{background:var(--paper-2)}
+  td.name{max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  td.num{font-family:ui-monospace,Menlo,monospace;font-size:12.5px;color:var(--ink-soft);white-space:nowrap}
+  .dirlink{color:var(--signal);font-weight:600;cursor:pointer;text-decoration:none}
+  .dirlink:hover{text-decoration:underline}
+  .btn{border:1px solid var(--line);background:var(--paper-solid);color:var(--ink);font-size:12.5px;padding:7px 12px;border-radius:10px;cursor:pointer;font-weight:500}
+  .btn:hover{border-color:var(--signal);color:var(--signal)}
+  .btn.go{background:var(--signal);border-color:var(--signal);color:#06231f;font-weight:600}
+  .btn.go:hover{color:#06231f;filter:brightness(1.06)}
+  .btn.danger{border-color:color-mix(in srgb,var(--pop) 50%,transparent);color:var(--pop);background:color-mix(in srgb,var(--pop) 10%,transparent)}
+  .btn[disabled]{opacity:.45;cursor:not-allowed}
+  .icon{border:0;background:transparent;color:var(--ink-soft);cursor:pointer;padding:5px;border-radius:8px;display:inline-flex}
+  .icon:hover{color:var(--signal);background:var(--paper-2)}
+  .icon.del:hover{color:var(--pop)}
+  input,select{font:inherit;font-size:14px;padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:var(--paper-solid);color:var(--ink)}
+  input:focus,select:focus{outline:2px solid var(--signal);border-color:transparent}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .row label{display:flex;flex-direction:column;gap:5px;font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft)}
+  .crumbs{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:13.5px;margin:14px 0 10px;font-family:ui-monospace,Menlo,monospace}
+  .crumbs a{color:var(--signal);cursor:pointer}
+  .crumbs span{color:var(--ink-soft)}
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+  .badge{font-family:ui-monospace,Menlo,monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:2px 7px;border:1px solid var(--line-soft);border-radius:999px;color:var(--ink-soft)}
+  .badge.admin{color:var(--signal);border-color:color-mix(in srgb,var(--signal) 45%,transparent)}
+  .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:var(--paper-solid);color:var(--ink);border:1px solid var(--line);box-shadow:var(--shadow);padding:11px 18px;border-radius:999px;font-size:13.5px;z-index:50;opacity:0;pointer-events:none;transition:opacity .2s}
+  .toast.on{opacity:1}
+  .hidden{display:none!important}
+  .empty{color:var(--ink-soft);font-size:13.5px;padding:18px 10px;text-align:center}
+  @media(max-width:720px){td.name{max-width:160px}.hide-sm{display:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">Dropzone<small>admin</small></div>
+    <span style="flex:1"></span>
+    <span id="who" class="badge admin"></span>
+    <a class="pill" href="/">← Drop zone</a>
+  </header>
+
+  <div class="tabs">
+    <button data-tab="overview" class="on">Overview</button>
+    <button data-tab="accounts">Accounts</button>
+    <button data-tab="library">Library</button>
+    <button data-tab="files">Files</button>
+  </div>
+
+  <!-- ============================================================ overview -->
+  <section id="tab-overview">
+    <div class="card">
+      <h2>Storage</h2>
+      <p class="sub">How full the disk that holds the drop zone is, and how much of that is Dropzone itself.</p>
+      <div class="meter"><i class="dz" id="m-dz" style="width:0"></i><i class="ot" id="m-ot" style="width:0"></i></div>
+      <div class="legend">
+        <span><i style="background:var(--signal)"></i>Dropzone files <b id="l-dz"></b></span>
+        <span><i style="background:var(--other)"></i>Other data on disk <b id="l-ot"></b></span>
+        <span><i style="background:var(--paper-2);border:1px solid var(--line-soft)"></i>Free <b id="l-free"></b></span>
+        <span class="pct" id="l-pct"></span>
+      </div>
+      <div class="grid">
+        <div class="tile"><span>Shared files</span><b id="t-files"></b></div>
+        <div class="tile"><span>Text notes</span><b id="t-notes"></b></div>
+        <div class="tile"><span>Dropzone uses</span><b id="t-used"></b></div>
+        <div class="tile"><span>Disk free</span><b id="t-free"></b></div>
+        <div class="tile"><span>Disk total</span><b id="t-total"></b></div>
+      </div>
+      <div class="row">
+        <button class="btn" onclick="cleanup('older30')">Delete unpinned items older than 30 days</button>
+        <button class="btn danger" onclick="cleanup('unpinned')">Delete everything unpinned</button>
+        <span style="color:var(--ink-soft);font-size:12.5px" id="datadir"></span>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Largest shared files</h2>
+      <p class="sub">The quickest wins when space runs low.</p>
+      <table><thead><tr><th>File</th><th>Size</th><th class="hide-sm">Shared</th><th></th></tr></thead><tbody id="largest"></tbody></table>
+    </div>
+  </section>
+
+  <!-- ============================================================ accounts -->
+  <section id="tab-accounts" class="hidden">
+    <div class="card">
+      <h2>My password</h2>
+      <p class="sub">Changing it signs out every other device that uses this account.</p>
+      <form class="row" onsubmit="return changeMyPassword(event)">
+        <label>Current<input name="current" type="password" autocomplete="current-password" required></label>
+        <label>New<input name="new" type="password" autocomplete="new-password" minlength="6" required></label>
+        <label>Repeat<input name="again" type="password" autocomplete="new-password" minlength="6" required></label>
+        <button class="btn go" type="submit" style="align-self:flex-end">Change password</button>
+      </form>
+    </div>
+    <div class="card">
+      <h2>Accounts</h2>
+      <p class="sub">Users can share and browse. Admins also manage storage, accounts, the library and the screen viewer.</p>
+      <table><thead><tr><th>Name</th><th>Role</th><th class="hide-sm">Updated</th><th></th></tr></thead><tbody id="users"></tbody></table>
+      <h2 style="margin-top:22px;font-size:15px">Add an account or reset a password</h2>
+      <form class="row" onsubmit="return saveUser(event)" style="margin-top:10px">
+        <label>Username<input name="name" pattern="[a-z0-9_.\-]{1,32}" placeholder="e.g. family" required></label>
+        <label>Role<select name="role"><option value="user">user</option><option value="admin">admin</option></select></label>
+        <label>Password<input name="password" type="password" autocomplete="new-password" minlength="6" required></label>
+        <button class="btn go" type="submit" style="align-self:flex-end">Save</button>
+      </form>
+    </div>
+  </section>
+
+  <!-- ============================================================ library -->
+  <section id="tab-library" class="hidden">
+    <div class="card">
+      <h2>Directory library</h2>
+      <p class="sub">Folders on the server that admins can browse and manage in the Files tab. Everything stays inside these folders.</p>
+      <table><thead><tr><th>Name</th><th>Path on server</th><th></th></tr></thead><tbody id="roots"></tbody></table>
+      <form class="row" onsubmit="return addRoot(event)" style="margin-top:16px">
+        <label>Name<input name="name" placeholder="e.g. Downloads" required></label>
+        <label style="flex:1;min-width:260px">Folder path<input name="path" placeholder="/home/you/Downloads" required></label>
+        <button class="btn go" type="submit" style="align-self:flex-end">Add folder</button>
+      </form>
+    </div>
+  </section>
+
+  <!-- ============================================================ files -->
+  <section id="tab-files" class="hidden">
+    <div class="card">
+      <div class="toolbar">
+        <select id="fm-root" onchange="fmOpen(this.value,'')"></select>
+        <button class="btn" onclick="document.getElementById('fm-upload').click()">Upload</button>
+        <input id="fm-upload" type="file" multiple class="hidden" onchange="fmUpload(this.files)">
+        <button class="btn" onclick="fmMkdir()">New folder</button>
+        <span style="flex:1"></span>
+        <button class="btn" id="b-download" onclick="fmDownloadSelected()" disabled>Download</button>
+        <button class="btn" id="b-move" onclick="fmMoveSelected()" disabled>Move to…</button>
+        <button class="btn" id="b-share" onclick="fmShareSelected()" disabled>Share to feed</button>
+        <button class="btn danger" id="b-delete" onclick="fmDeleteSelected()" disabled>Delete</button>
+      </div>
+      <div class="crumbs" id="crumbs"></div>
+      <table>
+        <thead><tr><th style="width:28px"><input type="checkbox" id="fm-all" onchange="fmToggleAll(this.checked)"></th><th>Name</th><th>Size</th><th class="hide-sm">Modified</th><th></th></tr></thead>
+        <tbody id="fm-rows"></tbody>
+      </table>
+      <div class="empty hidden" id="fm-empty">This folder is empty.</div>
+    </div>
+  </section>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  "use strict";
+  // theme follows the main page
+  let saved=null; try{ saved=localStorage.getItem("dz-theme"); }catch(e){}
+  document.documentElement.dataset.theme = saved || (matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");
+
+  const $=s=>document.querySelector(s);
+  let toastT=null;
+  window.toast=function(m){ const t=$("#toast"); t.textContent=m; t.classList.add("on"); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove("on"),2200); };
+  function fmt(b){ if(b==null) return ""; if(b<1024) return b+" B"; const u=["KB","MB","GB","TB"]; let i=-1; do{b/=1024;i++}while(b>=1024&&i<u.length-1); return b.toFixed(b<10?1:0)+" "+u[i]; }
+  function when(ts){ return ts? new Date(ts*1000).toLocaleString(undefined,{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"}) : "—"; }
+  function esc(s){ const d=document.createElement("div"); d.textContent=s==null?"":String(s); return d.innerHTML; }
+  async function api(url, opts){
+    const r=await fetch(url, Object.assign({headers:{"Content-Type":"application/json"}}, opts||{}));
+    if(r.status===401){ location.href="/login"; throw new Error("locked"); }
+    let d={}; try{ d=await r.json(); }catch(e){}
+    if(!r.ok){ throw new Error(d.error||("HTTP "+r.status)); }
+    return d;
+  }
+  const post=(url,body)=>api(url,{method:"POST",body:JSON.stringify(body||{})});
+  const del=url=>api(url,{method:"DELETE"});
+
+  // tabs
+  document.querySelectorAll(".tabs button").forEach(b=>b.addEventListener("click",()=>showTab(b.dataset.tab)));
+  function showTab(t){
+    document.querySelectorAll(".tabs button").forEach(b=>b.classList.toggle("on",b.dataset.tab===t));
+    ["overview","accounts","library","files"].forEach(n=>$("#tab-"+n).classList.toggle("hidden",n!==t));
+    try{ localStorage.setItem("dz-admin-tab",t); }catch(e){}
+    if(t==="files" && !fm.loaded) fmOpen($("#fm-root").value,"");
+  }
+
+  // ------------------------------------------------------------ overview + accounts + library
+  let me="";
+  async function load(){
+    const d=await api("/api/admin/overview");
+    me=d.me; $("#who").textContent=(me||"admin")+" · admin";
+    const s=d.storage, pctDz=s.disk_total? s.dropzone_used/s.disk_total*100:0, pctOt=s.disk_total? Math.max(0,(s.disk_used-s.dropzone_used))/s.disk_total*100:0;
+    $("#m-dz").style.width=pctDz.toFixed(2)+"%"; $("#m-ot").style.width=pctOt.toFixed(2)+"%";
+    $("#l-dz").textContent=fmt(s.dropzone_used); $("#l-ot").textContent=fmt(Math.max(0,s.disk_used-s.dropzone_used)); $("#l-free").textContent=fmt(s.disk_free);
+    $("#l-pct").textContent=Math.round(s.disk_total? s.disk_used/s.disk_total*100:0)+"% of "+fmt(s.disk_total)+" used";
+    $("#t-files").textContent=s.file_count; $("#t-notes").textContent=s.note_count; $("#t-used").textContent=fmt(s.dropzone_used);
+    $("#t-free").textContent=fmt(s.disk_free); $("#t-total").textContent=fmt(s.disk_total); $("#datadir").textContent="Data folder: "+s.data_dir;
+    $("#largest").innerHTML = s.largest.length ? s.largest.map(f=>`<tr><td class="name" title="${esc(f.name)}">${esc(f.name)}</td><td class="num">${fmt(f.size)}</td><td class="num hide-sm">${when(f.created)}</td>
+      <td style="text-align:right;white-space:nowrap"><a class="icon" href="/file/${f.id}/download" title="Download">${ico("down")}</a><button class="icon del" title="Delete" onclick="delItem('${f.id}','${esc(f.name)}')">${ico("trash")}</button></td></tr>`).join("") : `<tr><td colspan="4" class="empty">Nothing shared yet.</td></tr>`;
+    $("#users").innerHTML = d.users.map(u=>`<tr><td><b>${esc(u.name)}</b>${u.name===me?' <span class="badge">you</span>':''}${u.legacy_pin?' <span class="badge">legacy PIN</span>':''}</td>
+      <td><span class="badge ${u.role==='admin'?'admin':''}">${u.role}</span></td><td class="num hide-sm">${when(u.updated)}</td>
+      <td style="text-align:right;white-space:nowrap">
+        ${u.legacy_pin?'':`<button class="btn" onclick="resetPw('${esc(u.name)}')">Reset password</button>
+        <button class="btn" onclick="setRole('${esc(u.name)}','${u.role==='admin'?'user':'admin'}')" ${u.name===me?'disabled':''}>Make ${u.role==='admin'?'user':'admin'}</button>
+        <button class="icon del" title="Remove account" onclick="removeUser('${esc(u.name)}')" ${u.name===me?'disabled':''}>${ico("trash")}</button>`}
+      </td></tr>`).join("");
+    renderRoots(d.roots);
+  }
+  function renderRoots(roots){
+    fm.roots=roots;
+    $("#roots").innerHTML = roots.length ? roots.map(r=>`<tr><td><b>${esc(r.name)}</b></td><td class="num">${esc(r.path)}</td>
+      <td style="text-align:right"><button class="btn" onclick="openLib('${esc(r.name)}')">Browse</button> <button class="icon del" title="Remove from library" onclick="removeRoot('${esc(r.name)}')">${ico("trash")}</button></td></tr>`).join("")
+      : `<tr><td colspan="3" class="empty">No folders yet - add one below.</td></tr>`;
+    const sel=$("#fm-root"), cur=sel.value;
+    sel.innerHTML = roots.map(r=>`<option value="${esc(r.name)}">${esc(r.name)}</option>`).join("");
+    if(roots.some(r=>r.name===cur)) sel.value=cur;
+  }
+  window.cleanup=async m=>{ if(!confirm(m==="unpinned"?"Delete EVERY unpinned file and note from the drop zone?":"Delete unpinned items older than 30 days?")) return;
+    try{ const d=await post("/api/cleanup",{mode:m}); toast("Removed "+d.deleted+" items"); load(); }catch(e){ toast(e.message); } };
+  window.delItem=async (id,name)=>{ if(!confirm("Delete "+name+"?")) return; try{ await api("/api/item/file/"+id,{method:"DELETE"}); toast("Deleted"); load(); }catch(e){ toast(e.message); } };
+  window.changeMyPassword=async ev=>{ ev.preventDefault(); const f=ev.target;
+    if(f.new.value!==f.again.value){ toast("New passwords don't match"); return false; }
+    try{ await post("/api/password",{current:f.current.value,new:f.new.value}); toast("Password changed - other devices signed out"); f.reset(); }catch(e){ toast(e.message); } return false; };
+  window.saveUser=async ev=>{ ev.preventDefault(); const f=ev.target;
+    try{ const d=await post("/api/admin/users",{name:f.name.value,role:f.role.value,password:f.password.value}); toast("Saved "+f.name.value+" as "+d.role); f.reset(); load(); }catch(e){ toast(e.message); } return false; };
+  window.resetPw=async name=>{ const pw=prompt("New password for "+name+" (min 6 characters):"); if(pw==null) return;
+    try{ await post("/api/admin/users",{name,password:pw}); toast("Password reset for "+name); load(); }catch(e){ toast(e.message); } };
+  window.setRole=async (name,role)=>{ try{ await post("/api/admin/users",{name,role}); toast(name+" is now "+role); load(); }catch(e){ toast(e.message); } };
+  window.removeUser=async name=>{ if(!confirm("Remove the account '"+name+"'?")) return; try{ await del("/api/admin/users/"+encodeURIComponent(name)); toast("Removed"); load(); }catch(e){ toast(e.message); } };
+  window.addRoot=async ev=>{ ev.preventDefault(); const f=ev.target;
+    try{ const d=await post("/api/admin/roots",{name:f.name.value,path:f.path.value}); renderRoots(d.roots); toast("Added"); f.reset(); }catch(e){ toast(e.message); } return false; };
+  window.removeRoot=async name=>{ if(!confirm("Remove '"+name+"' from the library? (nothing on disk is deleted)")) return;
+    try{ const d=await del("/api/admin/roots/"+encodeURIComponent(name)); renderRoots(d.roots); toast("Removed"); }catch(e){ toast(e.message); } };
+  window.openLib=name=>{ showTab("files"); fmOpen(name,""); };
+
+  // ------------------------------------------------------------ file manager
+  const fm={roots:[], root:"", path:"", entries:[], sel:new Set(), loaded:false};
+  function ico(n){ const P={down:"M12 4v12M7 11l5 5 5-5M5 20h14", trash:"M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14", edit:"M4 20h4l10-10-4-4L4 16z", share:"M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7M16 6l-4-4-4 4M12 2v13", folder:"M3 7h6l2 2h10v10H3z", file:"M6 2h8l4 4v16H6zM14 2v4h4"};
+    return `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="${P[n]}"></path></svg>`; }
+  window.ico=ico;
+  const q=(root,path)=>"root="+encodeURIComponent(root)+"&path="+encodeURIComponent(path);
+  window.fmOpen=async function(root, path){
+    if(!root){ $("#fm-rows").innerHTML=""; $("#fm-empty").classList.remove("hidden"); $("#fm-empty").textContent="Add a folder in the Library tab first."; return; }
+    try{
+      const d=await api("/api/fm/list?"+q(root,path));
+      fm.root=root; fm.path=d.path; fm.entries=d.entries; fm.sel.clear(); fm.loaded=true;
+      $("#fm-root").value=root; $("#fm-all").checked=false;
+      renderCrumbs(); renderRows(); updateButtons();
+    }catch(e){ toast(e.message); }
+  };
+  function renderCrumbs(){
+    const parts=fm.path?fm.path.split("/"):[]; let acc="";
+    let h=`<a onclick="fmOpen('${esc(fm.root)}','')">${esc(fm.root)}</a>`;
+    parts.forEach(p=>{ acc=acc?acc+"/"+p:p; const a=acc; h+=`<span>/</span><a onclick="fmOpen('${esc(fm.root)}','${esc(a)}')">${esc(p)}</a>`; });
+    $("#crumbs").innerHTML=h;
+  }
+  function rel(name){ return fm.path? fm.path+"/"+name : name; }
+  function renderRows(){
+    const rows=$("#fm-rows");
+    $("#fm-empty").classList.toggle("hidden", fm.entries.length>0); $("#fm-empty").textContent="This folder is empty.";
+    rows.innerHTML = fm.entries.map((e,i)=>`<tr>
+      <td><input type="checkbox" data-i="${i}" ${fm.sel.has(i)?"checked":""} onchange="fmSel(${i},this.checked)"></td>
+      <td class="name" title="${esc(e.name)}"><span style="color:var(--ink-soft);margin-right:8px;vertical-align:-3px">${ico(e.dir?"folder":"file")}</span>${e.dir?`<a class="dirlink" onclick="fmOpen('${esc(fm.root)}','${esc(rel(e.name))}')">${esc(e.name)}</a>`:esc(e.name)}${e.link?' <span class="badge">link</span>':''}</td>
+      <td class="num">${e.dir?"—":fmt(e.size)}</td><td class="num hide-sm">${when(e.mtime)}</td>
+      <td style="text-align:right;white-space:nowrap">
+        <a class="icon" title="${e.dir?"Download as zip":"Download"}" href="/api/fm/download?${q(fm.root,rel(e.name))}">${ico("down")}</a>
+        ${e.dir?"":`<button class="icon" title="Share to the drop zone feed" onclick="fmShare('${esc(rel(e.name))}')">${ico("share")}</button>`}
+        <button class="icon" title="Rename" onclick="fmRename('${esc(rel(e.name))}','${esc(e.name)}')">${ico("edit")}</button>
+        <button class="icon del" title="Delete" onclick="fmDelete(['${esc(rel(e.name))}'])">${ico("trash")}</button>
+      </td></tr>`).join("");
+  }
+  function updateButtons(){ const n=fm.sel.size; ["b-download","b-move","b-delete"].forEach(id=>$("#"+id).disabled=n===0);
+    $("#b-share").disabled = n===0 || [...fm.sel].some(i=>fm.entries[i].dir); }
+  window.fmSel=(i,on)=>{ if(on) fm.sel.add(i); else fm.sel.delete(i); updateButtons(); };
+  window.fmToggleAll=on=>{ fm.sel.clear(); if(on) fm.entries.forEach((_,i)=>fm.sel.add(i)); renderRows(); updateButtons(); };
+  const selPaths=()=>[...fm.sel].map(i=>rel(fm.entries[i].name));
+  window.fmUpload=async function(files){
+    if(!files.length) return; const fd=new FormData(); fd.append("root",fm.root); fd.append("path",fm.path);
+    for(const f of files) fd.append("files",f,f.name);
+    toast("Uploading "+files.length+" file(s)…");
+    try{ const r=await fetch("/api/fm/upload",{method:"POST",body:fd}); const d=await r.json(); if(!r.ok) throw new Error(d.error||"upload failed"); toast("Uploaded "+d.saved+" file(s)"); fmOpen(fm.root,fm.path); }
+    catch(e){ toast(e.message); } $("#fm-upload").value="";
+  };
+  window.fmMkdir=async()=>{ const n=prompt("New folder name:"); if(!n) return; try{ await post("/api/fm/mkdir",{root:fm.root,path:fm.path,name:n}); fmOpen(fm.root,fm.path); }catch(e){ toast(e.message); } };
+  window.fmRename=async(p,old)=>{ const n=prompt("Rename to:",old); if(!n||n===old) return; try{ await post("/api/fm/rename",{root:fm.root,path:p,name:n}); fmOpen(fm.root,fm.path); }catch(e){ toast(e.message); } };
+  window.fmDelete=async paths=>{ if(!confirm("Permanently delete "+paths.length+" item(s) from the server?\n\n"+paths.join("\n"))) return;
+    try{ const d=await post("/api/fm/delete",{root:fm.root,paths}); toast("Deleted "+d.deleted); fmOpen(fm.root,fm.path); }catch(e){ toast(e.message); } };
+  window.fmShare=async p=>{ try{ await post("/api/fm/share",{root:fm.root,path:p}); toast("Shared to the feed"); }catch(e){ toast(e.message); } };
+  window.fmDeleteSelected=()=>fmDelete(selPaths());
+  window.fmShareSelected=async()=>{ for(const p of selPaths()) await fmShare(p); };
+  window.fmDownloadSelected=()=>{ selPaths().forEach((p,i)=>setTimeout(()=>{ const a=document.createElement("a"); a.href="/api/fm/download?"+q(fm.root,p); a.download=""; document.body.appendChild(a); a.click(); a.remove(); }, i*400)); };
+  window.fmMoveSelected=async()=>{ const dest=prompt("Move into which folder? (path inside '"+fm.root+"', blank = top level)", fm.path); if(dest==null) return;
+    try{ const d=await post("/api/fm/move",{root:fm.root,paths:selPaths(),dest}); toast("Moved "+d.moved); fmOpen(fm.root,fm.path); }catch(e){ toast(e.message); } };
+
+  // ------------------------------------------------------------ init
+  load().then(()=>{ let t=null; try{ t=localStorage.getItem("dz-admin-tab"); }catch(e){} if(t) showTab(t); }).catch(e=>toast(e.message));
+})();
+</script>
+</body></html>

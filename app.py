@@ -847,6 +847,260 @@ def api_cleanup():
     if n: bump()
     return jsonify(deleted=n)
 
+# --------------------------------------------------------------------------- v6: admin panel
+SETTINGS_PATH = os.path.join(DATA_DIR, "settings.json")
+_settings_lock = threading.Lock()
+
+def load_settings():
+    try:
+        with open(SETTINGS_PATH, "r", encoding="utf-8") as f:
+            s = json.load(f)
+    except (OSError, ValueError):
+        s = {}
+    if not isinstance(s, dict): s = {}
+    if not s.get("library_roots"):
+        home = os.path.expanduser("~")
+        s["library_roots"] = [{"name": "Home", "path": home}] if os.path.isdir(home) else []
+    return s
+
+def save_settings(s):
+    with _settings_lock:
+        _write_private(SETTINGS_PATH, json.dumps(s, indent=1).encode("utf-8"))
+
+def storage_overview(conn):
+    du = shutil.disk_usage(DATA_DIR)
+    files = conn.execute("SELECT COUNT(*) c, COALESCE(SUM(size),0) s FROM files").fetchone()
+    notes = conn.execute("SELECT COUNT(*) c FROM notes").fetchone()["c"]
+    largest = [{"id":r["id"],"name":r["name"],"size":r["size"],"created":r["created"]}
+               for r in conn.execute("SELECT id,name,size,created FROM files ORDER BY size DESC LIMIT 15").fetchall()]
+    return {"disk_total": du.total, "disk_free": du.free, "disk_used": du.total - du.free,
+            "dropzone_used": files["s"], "file_count": files["c"], "note_count": notes,
+            "data_dir": DATA_DIR, "largest": largest}
+
+@app.route("/admin")
+@require_admin
+def admin_page():
+    return send_file(os.path.join(HERE, "templates", "admin.html"))
+
+@app.route("/api/admin/overview")
+@require_admin
+def api_admin_overview():
+    users = [{"name": n, "role": u.get("role", "user"), "updated": u.get("updated", 0)}
+             for n, u in sorted(load_users().items())]
+    if PIN and "user" not in load_users():
+        users.append({"name": "user", "role": "user", "updated": 0, "legacy_pin": True})
+    with db() as conn:
+        storage = storage_overview(conn)
+    return jsonify(me=current_user()["name"], users=users, storage=storage,
+                   roots=load_settings()["library_roots"])
+
+@app.route("/api/admin/users", methods=["POST"])
+@require_admin
+def api_admin_user_set():
+    d = request.json or {}
+    name = (d.get("name") or "").strip().lower(); role = d.get("role") or None; pw = d.get("password") or ""
+    users = load_users()
+    try:
+        if pw:
+            role = set_password(name, pw, role)
+        elif name in users and role in ROLES:
+            if name == current_user()["name"] and role != "admin":
+                return jsonify(error="you can't demote yourself"), 400
+            users[name]["role"] = role; save_users(users)
+        else:
+            return jsonify(error="a password is required for a new account"), 400
+    except ValueError as e:
+        return jsonify(error=str(e)), 400
+    with db() as conn:
+        log_activity(conn, "join", f"{current_user()['name']} updated account '{name}' ({role})", client_ip())
+    bump()
+    return jsonify(ok=True, role=role)
+
+@app.route("/api/admin/users/<name>", methods=["DELETE"])
+@require_admin
+def api_admin_user_delete(name):
+    name = name.strip().lower()
+    users = load_users()
+    if name == current_user()["name"]:
+        return jsonify(error="you can't delete the account you're signed in with"), 400
+    admins = [n for n, u in users.items() if u.get("role") == "admin"]
+    if name in admins and len(admins) == 1:
+        return jsonify(error="that is the only admin account"), 400
+    if not remove_user(name):
+        return jsonify(error="no such account"), 404
+    with db() as conn:
+        log_activity(conn, "trash", f"{current_user()['name']} removed account '{name}'", client_ip())
+    bump()
+    return jsonify(ok=True)
+
+@app.route("/api/admin/roots", methods=["POST"])
+@require_admin
+def api_admin_root_add():
+    d = request.json or {}
+    name = (d.get("name") or "").strip()[:40]; path = os.path.expanduser((d.get("path") or "").strip())
+    if not name or not path: return jsonify(error="name and path are required"), 400
+    path = os.path.realpath(path)
+    if not os.path.isdir(path): return jsonify(error="that folder doesn't exist on the server"), 400
+    s = load_settings()
+    if any(r["name"].lower() == name.lower() for r in s["library_roots"]):
+        return jsonify(error="a library with that name already exists"), 400
+    s["library_roots"].append({"name": name, "path": path}); save_settings(s)
+    return jsonify(ok=True, roots=s["library_roots"])
+
+@app.route("/api/admin/roots/<name>", methods=["DELETE"])
+@require_admin
+def api_admin_root_remove(name):
+    s = load_settings()
+    before = len(s["library_roots"])
+    s["library_roots"] = [r for r in s["library_roots"] if r["name"] != name]
+    if len(s["library_roots"]) == before: return jsonify(error="no such library"), 404
+    save_settings(s)
+    return jsonify(ok=True, roots=s["library_roots"])
+
+# ---- admin file manager over the library roots ----
+def _fm_root(name):
+    for r in load_settings()["library_roots"]:
+        if r["name"] == name: return os.path.realpath(r["path"])
+    abort(404)
+
+def _fm_resolve(root_name, rel, must_exist=True):
+    """Map (root, relative path) to an absolute path that is guaranteed to stay inside the root."""
+    base = _fm_root(root_name)
+    rel = (rel or "").replace("\\", "/").strip("/")
+    target = os.path.realpath(os.path.join(base, rel)) if rel else base
+    if target != base and not target.startswith(base + os.sep):
+        abort(403)
+    if must_exist and not os.path.lexists(target):
+        abort(404)
+    return base, target
+
+def _safe_name(name):
+    name = (name or "").strip().replace("\\", "/").split("/")[-1]
+    if not name or name in (".", "..") or "\0" in name: abort(400)
+    return name
+
+@app.route("/api/fm/list")
+@require_admin
+def api_fm_list():
+    base, target = _fm_resolve(request.args.get("root"), request.args.get("path"))
+    if not os.path.isdir(target): abort(400)
+    entries = []
+    try:
+        with os.scandir(target) as it:
+            for e in it:
+                try:
+                    st = e.stat(follow_symlinks=False); is_dir = e.is_dir()
+                    entries.append({"name": e.name, "dir": is_dir, "link": e.is_symlink(),
+                                    "size": 0 if is_dir else st.st_size, "mtime": st.st_mtime,
+                                    "mime": "" if is_dir else (mimetypes.guess_type(e.name)[0] or "")})
+                except OSError:
+                    continue
+    except PermissionError:
+        return jsonify(error="permission denied"), 403
+    entries.sort(key=lambda x: (not x["dir"], x["name"].lower()))
+    rel = os.path.relpath(target, base).replace(os.sep, "/")
+    return jsonify(root=request.args.get("root"), path="" if rel == "." else rel, entries=entries)
+
+@app.route("/api/fm/download")
+@require_admin
+def api_fm_download():
+    base, target = _fm_resolve(request.args.get("root"), request.args.get("path"))
+    if os.path.isdir(target):
+        tmp = tempfile.SpooledTemporaryFile(max_size=64*1024*1024)
+        with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as z:
+            for dp, dns, fns in os.walk(target):
+                for fn in fns:
+                    full = os.path.join(dp, fn)
+                    try: z.write(full, arcname=os.path.relpath(full, target))
+                    except OSError: pass
+        tmp.seek(0)
+        return send_file(tmp, mimetype="application/zip", as_attachment=True,
+                         download_name=(os.path.basename(target) or "folder") + ".zip")
+    return send_file(target, as_attachment=True, download_name=os.path.basename(target))
+
+@app.route("/api/fm/upload", methods=["POST"])
+@require_admin
+def api_fm_upload():
+    base, target = _fm_resolve(request.form.get("root"), request.form.get("path"))
+    if not os.path.isdir(target): abort(400)
+    n = 0
+    for f in request.files.getlist("files"):
+        if not f or not f.filename: continue
+        f.save(os.path.join(target, _safe_name(f.filename))); n += 1
+    return jsonify(saved=n)
+
+@app.route("/api/fm/mkdir", methods=["POST"])
+@require_admin
+def api_fm_mkdir():
+    d = request.json or {}
+    base, target = _fm_resolve(d.get("root"), d.get("path"))
+    new = os.path.join(target, _safe_name(d.get("name")))
+    if os.path.lexists(new): return jsonify(error="already exists"), 400
+    os.makedirs(new)
+    return jsonify(ok=True)
+
+@app.route("/api/fm/rename", methods=["POST"])
+@require_admin
+def api_fm_rename():
+    d = request.json or {}
+    base, src = _fm_resolve(d.get("root"), d.get("path"))
+    if src == base: abort(400)
+    dst = os.path.join(os.path.dirname(src), _safe_name(d.get("name")))
+    if os.path.lexists(dst): return jsonify(error="a file with that name already exists"), 400
+    os.rename(src, dst)
+    return jsonify(ok=True)
+
+@app.route("/api/fm/move", methods=["POST"])
+@require_admin
+def api_fm_move():
+    d = request.json or {}
+    base, dest = _fm_resolve(d.get("root"), d.get("dest"))
+    if not os.path.isdir(dest): return jsonify(error="destination is not a folder"), 400
+    n = 0
+    for p in d.get("paths") or []:
+        _, src = _fm_resolve(d.get("root"), p)
+        if src == base or dest == src or dest.startswith(src + os.sep): continue
+        dst = os.path.join(dest, os.path.basename(src))
+        if os.path.lexists(dst): continue
+        shutil.move(src, dst); n += 1
+    return jsonify(moved=n)
+
+@app.route("/api/fm/delete", methods=["POST"])
+@require_admin
+def api_fm_delete():
+    d = request.json or {}
+    n = 0
+    for p in d.get("paths") or []:
+        base, target = _fm_resolve(d.get("root"), p)
+        if target == base: continue
+        try:
+            if os.path.isdir(target) and not os.path.islink(target): shutil.rmtree(target)
+            else: os.remove(target)
+            n += 1
+        except OSError:
+            pass
+    with db() as conn:
+        log_activity(conn, "trash", f"{current_user()['name']} deleted {n} item(s) in library '{d.get('root')}'", client_ip())
+    bump()
+    return jsonify(deleted=n)
+
+@app.route("/api/fm/share", methods=["POST"])
+@require_admin
+def api_fm_share():
+    """Copy a file from a library folder into the shared feed so everyone can see it."""
+    d = request.json or {}
+    base, src = _fm_resolve(d.get("root"), d.get("path"))
+    if not os.path.isfile(src): return jsonify(error="only files can be shared"), 400
+    if os.path.getsize(src) > MAX_MB * 1024 * 1024: return jsonify(error="file larger than the upload limit"), 413
+    ip = client_ip(); name = os.path.basename(src)
+    with db() as conn:
+        who = touch_device(conn)
+        with open(src, "rb") as f:
+            _store_file(conn, name, f.read(), mimetypes.guess_type(name)[0], ip, None)
+        log_activity(conn, "up", f"{who} shared {name} from library '{d.get('root')}'", ip)
+    bump()
+    return jsonify(ok=True)
+
 # ---- remote screen (x11vnc + noVNC via built-in websockify bridge) ----
 import socket as _socket
 
