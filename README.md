@@ -227,6 +227,8 @@ Open the **Screen** tab in the sidebar — once the status dot turns green, tap 
 
 ## Architecture
 
+> Full end-to-end developer documentation with diagrams: **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — system context, deployment, data model, API reference, frontend interpreter, security model, runbook.
+
 Dropzone is deliberately low on moving parts — no build step, no framework lock-in, nothing to compile.
 
 ```

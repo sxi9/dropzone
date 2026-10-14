@@ -25,24 +25,24 @@ Design principles that explain most decisions in the code:
 ```mermaid
 flowchart LR
   subgraph Clients
-    P[Phone / laptop on home Wi-Fi]
-    T[Device on the tailnet]
-    I[Anyone on the internet]
+    P["Phone / laptop on home Wi-Fi"]
+    T["Device on the tailnet"]
+    I["Anyone on the internet"]
   end
 
-  subgraph Ubuntu host  192.168.29.22  /  leakwatch.tail765a4c.ts.net
-    FW[firewalld<br/>zone public: 8000 8001 8090 8787]
-    TS[tailscaled<br/>serve / funnel]
-    subgraph Dropzone process  :8000
-      APP[Flask app.py]
-      SSE[SSE change signal]
+  subgraph host["Ubuntu host 192.168.29.22 / leakwatch.tail765a4c.ts.net"]
+    FW["firewalld<br/>zone public: 8000 8001 8090 8787"]
+    TS["tailscaled<br/>serve / funnel"]
+    subgraph dz["Dropzone process :8000"]
+      APP["Flask app.py"]
+      SSE["SSE change signal"]
     end
-    WS[websockify bridge :6080<br/>dropzone_auth.ScreenTicketAuth]
-    VNC[x11vnc :5900<br/>-localhost]
-    DB[(data/dropzone.db<br/>SQLite)]
-    FS[/data/files/  uploads/]
-    USERS[data/users.json<br/>data/settings.json<br/>data/secret.key]
-    PANEL[Tailscale Panel :8090<br/>separate project]
+    WS["websockify bridge :6080<br/>dropzone_auth.ScreenTicketAuth"]
+    VNC["x11vnc :5900<br/>-localhost"]
+    DB[("data/dropzone.db<br/>SQLite")]
+    FS["data/files/ uploads"]
+    USERS["data/users.json<br/>data/settings.json<br/>data/secret.key"]
+    PANEL["Tailscale Panel :8090<br/>separate project"]
   end
 
   P -- http://192.168.29.22:8000 --> FW --> APP
@@ -115,12 +115,12 @@ dropzone/
 
 ```mermaid
 flowchart LR
-  A[edit on dev machine<br/>D:\physical_ai\dropzone] --> B[run scratch tests<br/>python requests against a throwaway instance]
-  B --> C[git commit + push<br/>github.com/sxi9/dropzone]
-  C --> D["git archive HEAD | ssh host tar -x -C ~/Downloads/dropzone"]
-  D --> E["kill $(systemctl show dropzone -p MainPID --value)"]
-  E --> F[systemd restarts within 3 s]
-  F --> G[verify: curl /login = 302→login, /api/state = 401,<br/>item counts unchanged]
+  A["edit on dev machine<br/>D:\physical_ai\dropzone"] --> B["run scratch tests<br/>python requests against a throwaway instance"]
+  B --> C["git commit + push<br/>github.com/sxi9/dropzone"]
+  C --> D["git archive HEAD piped to ssh host tar -x -C ~/Downloads/dropzone"]
+  D --> E["kill the MainPID from systemctl show dropzone"]
+  E --> F["systemd restarts within 3 s"]
+  F --> G["verify: curl /login = 302 to login, /api/state = 401,<br/>item counts unchanged"]
 ```
 
 * `git archive` never contains `data/` (git-ignored), so uploads and the DB survive every deploy.
@@ -232,19 +232,19 @@ Outside SQLite:
 
 ```mermaid
 flowchart TD
-  R[incoming request] --> PF{DROPZONE_TRUST_PROXY?}
-  PF -- yes --> PX[ProxyFix rewrites remote_addr / scheme / host]
+  R["incoming request"] --> PF{"DROPZONE_TRUST_PROXY?"}
+  PF -- yes --> PX["ProxyFix rewrites remote_addr / scheme / host"]
   PF -- no --> BR
-  PX --> BR[before_request _csrf_guard<br/>POST/PUT/PATCH/DELETE must have Origin or Referer host == request.host]
-  BR --> RT[route]
+  PX --> BR["before_request _csrf_guard<br/>POST/PUT/PATCH/DELETE must have Origin or Referer host == request.host"]
+  BR --> RT["route"]
   RT --> AU{decorator}
-  AU -- require_auth --> CU[current_user]
+  AU -- require_auth --> CU["current_user"]
   AU -- require_admin --> CU
   AU -- none --> H
-  CU -- None --> D401[/api → 401 JSON<br/>page → 302 /login]
-  CU -- role != admin & admin needed --> D403[403]
-  CU -- ok --> H[handler]
-  H --> AR[after_request _security_headers<br/>nosniff, X-Frame-Options SAMEORIGIN, Referrer-Policy, Permissions-Policy,<br/>Cache-Control no-store on /api and /login]
+  CU -- None --> D401["/api: 401 JSON<br/>page: 302 /login"]
+  CU -- "role != admin and admin needed" --> D403[403]
+  CU -- ok --> H["handler"]
+  H --> AR["after_request _security_headers<br/>nosniff, X-Frame-Options SAMEORIGIN, Referrer-Policy, Permissions-Policy,<br/>Cache-Control no-store on /api and /login"]
 ```
 
 `current_user()` rules:
@@ -402,11 +402,11 @@ Only dotted lookups are supported (`it.name`, `d.you`) — **no expressions**. A
 
 ```mermaid
 flowchart LR
-  E[DOM event / SSE / poll] --> SS[setState patch]
-  SS --> RAF[requestAnimationFrame → doRender]
-  RAF --> CV[computeV: derive every bound value<br/>from state - roles, filters, styles, handlers]
-  CV --> EX[clone template, expand with scope]
-  EX --> SW[swap into #dz-root, restore focus/scroll<br/>via data-keep attributes]
+  E["DOM event / SSE / poll"] --> SS["setState patch"]
+  SS --> RAF["requestAnimationFrame: doRender"]
+  RAF --> CV["computeV: derive every bound value<br/>from state - roles, filters, styles, handlers"]
+  CV --> EX["clone template, expand with scope"]
+  EX --> SW["swap into #dz-root, restore focus/scroll<br/>via data-keep attributes"]
 ```
 
 Role awareness lives in `computeV`: `isAdmin`, `authOn`, `userTag`, per-item `canDelete`, device `renameHandler` (null for non-owners), `showFetchUrl` (admin only), the storage meter percentages. The template hides admin-only blocks with `<sc-if value="{{ isAdmin }}">`.
@@ -460,18 +460,18 @@ Loads `static/novnc/core/rfb.js`, polls `/api/screen-status`, connects `RFB` to 
 ```mermaid
 flowchart TB
   subgraph Untrusted
-    NET[Internet via Funnel]
-    LAN[LAN devices]
+    NET["Internet via Funnel"]
+    LAN["LAN devices"]
   end
-  subgraph Semi-trusted: signed-in user
-    U[role user]
+  subgraph semi["Semi-trusted: signed-in user"]
+    U["role user"]
   end
-  subgraph Trusted: admin
-    A[role admin]
-    FM[file manager over library roots]
-    SCR[screen viewer]
+  subgraph trusted["Trusted: admin"]
+    A["role admin"]
+    FM["file manager over library roots"]
+    SCR["screen viewer"]
   end
-  NET --> LOGIN{/login}
+  NET --> LOGIN{"/login"}
   LAN --> LOGIN
   LOGIN --> U
   LOGIN --> A
@@ -493,14 +493,14 @@ Known limitations worth telling a future developer:
 ```mermaid
 flowchart LR
   subgraph Internet
-    X[client]
+    X["client"]
   end
-  subgraph Tailscale cloud
-    ING[Funnel ingress<br/>TLS for *.ts.net]
+  subgraph tscloud["Tailscale cloud"]
+    ING["Funnel ingress<br/>TLS for *.ts.net"]
   end
   subgraph Host
-    TD[tailscaled]
-    APP[Dropzone :8000]
+    TD["tailscaled"]
+    APP["Dropzone :8000"]
   end
   X -- "https :8443" --> ING -- WireGuard --> TD -- "http 127.0.0.1:8000<br/>X-Forwarded-For/Proto/Host" --> APP
 ```
