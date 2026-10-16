@@ -1300,14 +1300,36 @@ def screen_ticket(hours=None):
     sig = hmac.new(app.secret_key, f"screen|{exp}".encode(), hashlib.sha256).hexdigest()
     return f"{exp}.{sig}"
 
+_ws_proc = {"p": None}
+
+def _kill_stale_bridges():
+    """A restart orphans our old websockify child; kill any bridge on our WS_PORT so they never stack up."""
+    import subprocess
+    try:
+        subprocess.run(["pkill", "-f", f"websockify .*0\\.0\\.0\\.0:{WS_PORT} "], timeout=5)
+    except Exception:
+        pass
+
+def _stop_websockify():
+    p = _ws_proc.get("p")
+    if p and p.poll() is None:
+        try: p.terminate()
+        except Exception: pass
+
 def _start_websockify():
     """Run websockify as a child process (it needs the main thread for signals)."""
-    import subprocess
+    import subprocess, atexit, signal
     try:
         import websockify  # noqa: F401 — just checking it's installed
     except ImportError:
         _ws_state["error"] = "websockify not installed (pip install websockify)"
         return
+    _kill_stale_bridges()                       # clear any leftover from a previous run first
+    atexit.register(_stop_websockify)
+    try:
+        signal.signal(signal.SIGTERM, lambda *_: (_stop_websockify(), sys.exit(0)))
+    except (ValueError, OSError):
+        pass                                    # not the main thread (e.g. under a WSGI server)
     env = dict(os.environ)
     env["PYTHONPATH"] = HERE + os.pathsep + env.get("PYTHONPATH", "")
     def run():
@@ -1318,6 +1340,7 @@ def _start_websockify():
                      "--auth-plugin", "dropzone_auth.ScreenTicketAuth", "--auth-source", SECRET_PATH,
                      f"0.0.0.0:{WS_PORT}", f"127.0.0.1:{VNC_PORT}"],
                     cwd=HERE, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                _ws_proc["p"] = p
                 _ws_state["running"] = True
                 p.wait()
             except Exception as e:
