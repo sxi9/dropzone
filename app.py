@@ -551,7 +551,8 @@ def api_state():
             stats = {"used":used, "free":du.free, "total":du.total, "largest":largest}
     return jsonify(items=items, devices=devices, activity=activity, chat=chat,
                    me=me, remote=is_remote(me), stats=stats,
-                   user=user["name"], role=user["role"], admin=admin, auth=auth_enabled())
+                   user=user["name"], role=user["role"], admin=admin, auth=auth_enabled(),
+                   ask_location=bool(access_cfg().get("enabled") and access_cfg().get("client_details") and access_cfg().get("precise_location")))
 
 # --------------------------------------------------------------------------- SSE push
 @app.route("/api/events")
@@ -873,6 +874,7 @@ def load_settings():
     al = s.setdefault("access_log", {})
     al.setdefault("enabled", False); al.setdefault("geo", True); al.setdefault("client_details", True)
     al.setdefault("retention_days", 90)
+    al.setdefault("precise_location", False)     # ask the browser for GPS position; the visitor sees a permission prompt and must allow it
     return s
 
 def save_settings(s):
@@ -1226,14 +1228,24 @@ def api_telemetry():
     d = request.json or {}
     keep = {k: (str(v)[:120] if not isinstance(v, (int, float, bool)) else v) for k, v in d.items() if k in (
         "screen", "viewport", "dpr", "colorDepth", "tz", "lang", "languages", "platform", "touch", "cores", "memory",
-        "connection", "uaBrands", "uaMobile", "uaPlatform", "vendor", "cookies", "dnt", "referrer", "page", "online", "battery")}
+        "connection", "uaBrands", "uaMobile", "uaPlatform", "vendor", "cookies", "dnt", "referrer", "page", "online", "battery",
+        "lat", "lon", "acc", "alt", "speed", "heading", "loc_error")}
+    for k in ("lat", "lon", "acc", "alt", "speed", "heading"):
+        if k in keep:
+            try: keep[k] = round(float(keep[k]), 6)
+            except (TypeError, ValueError): keep.pop(k, None)
+    if "lat" in keep and "lon" in keep and not (-90 <= keep["lat"] <= 90 and -180 <= keep["lon"] <= 180):
+        keep.pop("lat", None); keep.pop("lon", None)
     ip = client_ip(); u = current_user() or {}
     browser, osn, device = parse_ua(request.headers.get("User-Agent", ""))
     with db() as conn:
         conn.execute("""INSERT INTO access_log (id,ts,ip,via,user,role,method,path,status,detail,ua,browser,os,device,referer,lang,client)
                         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                      (uuid.uuid4().hex, time.time(), ip, classify_ip(ip), u.get("name") or "", u.get("role") or "",
-                      "BEACON", "client-details", 200, f"{keep.get('screen','')} {keep.get('tz','')} {keep.get('platform','')}".strip(),
+                      "BEACON", "precise-location" if "lat" in keep else "client-details", 200,
+                      (f"GPS {keep['lat']},{keep['lon']} (±{int(keep.get('acc') or 0)} m)" if "lat" in keep else
+                       f"location denied: {keep['loc_error']}" if keep.get("loc_error") else
+                       f"{keep.get('screen','')} {keep.get('tz','')} {keep.get('platform','')}".strip()),
                       request.headers.get("User-Agent", "")[:400], browser, osn, device, "", (request.headers.get("Accept-Language") or "")[:80],
                       json.dumps(keep)))
     return jsonify(ok=True)
@@ -1253,7 +1265,15 @@ def api_admin_access():
                         FROM access_log GROUP BY ip ORDER BY last_seen DESC LIMIT 200""").fetchall()]
         total = conn.execute("SELECT COUNT(*) c FROM access_log").fetchone()["c"]
     for r in rows: r["client"] = json.loads(r["client"]) if r.get("client") else None; r["geo"] = geo.get(r["ip"])
-    for v in visitors: v["geo"] = geo.get(v["ip"])
+    with db() as conn:
+        precise = {}
+        for r in conn.execute("SELECT ip, ts, client FROM access_log WHERE path='precise-location' ORDER BY ts DESC").fetchall():
+            if r["ip"] not in precise:
+                try:
+                    c = json.loads(r["client"]); precise[r["ip"]] = {"lat": c["lat"], "lon": c["lon"], "acc": c.get("acc"), "ts": r["ts"]}
+                except Exception:
+                    pass
+    for v in visitors: v["geo"] = geo.get(v["ip"]); v["precise"] = precise.get(v["ip"])
     return jsonify(settings=access_cfg(), rows=rows, visitors=visitors, total=total)
 
 @app.route("/api/admin/access/settings", methods=["POST"])
@@ -1261,7 +1281,7 @@ def api_admin_access():
 def api_admin_access_settings():
     d = request.json or {}
     s = load_settings(); al = s["access_log"]
-    for k in ("enabled", "geo", "client_details"):
+    for k in ("enabled", "geo", "client_details", "precise_location"):
         if k in d: al[k] = bool(d[k])
     if "retention_days" in d:
         try: al["retention_days"] = max(0, min(3650, int(d["retention_days"])))

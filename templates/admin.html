@@ -201,11 +201,13 @@
         <label style="flex-direction:row;align-items:center;gap:8px;text-transform:none;font-size:13.5px;color:var(--ink)"><input type="checkbox" id="vl-enabled" style="width:18px;height:18px"> Log visitors</label>
         <label style="flex-direction:row;align-items:center;gap:8px;text-transform:none;font-size:13.5px;color:var(--ink)"><input type="checkbox" id="vl-geo" style="width:18px;height:18px"> Look up location of public IPs (ip-api.com)</label>
         <label style="flex-direction:row;align-items:center;gap:8px;text-transform:none;font-size:13.5px;color:var(--ink)"><input type="checkbox" id="vl-client" style="width:18px;height:18px"> Collect browser details (screen, timezone, platform…)</label>
+        <label style="flex-direction:row;align-items:center;gap:8px;text-transform:none;font-size:13.5px;color:var(--ink)"><input type="checkbox" id="vl-precise" style="width:18px;height:18px"> Ask for precise GPS location</label>
         <label>Keep for (days, 0 = forever)<input id="vl-days" type="number" min="0" max="3650" style="width:110px"></label>
         <button class="btn go" onclick="saveVisitorSettings()">Save</button>
         <button class="btn danger" onclick="clearVisitors()">Clear log</button>
       </div>
       <p class="hint" style="margin:12px 0 0">What gets stored: time, IP and how it arrived (LAN / tailnet / public), account, request, result, browser, OS, device type, referer, language, and for public IPs the country, region, city, ISP and whether it looks like a proxy or hosting provider. Browser details add screen size, viewport, timezone, languages, platform, touch, CPU cores, memory and connection type. Failed logins are flagged.</p>
+      <p class="hint" style="margin:8px 0 0"><b>Precise GPS location</b> asks each visitor's browser for their exact position. The browser shows them a permission prompt and sends nothing unless they tap Allow. It only works over HTTPS (your <code>…ts.net:8443</code> address), not plain http, and needs browser details enabled.</p>
     </div>
     <div class="card">
       <h2>Visitors <span class="badge" id="vl-total"></span></h2>
@@ -368,22 +370,24 @@
   window.loadVisitors=async function(ip){
     vlFilter=ip||"";
     let d; try{ d=await api("/api/admin/access?limit=300"+(vlFilter?"&ip="+encodeURIComponent(vlFilter):"")); }catch(e){ toast(e.message); return; }
-    const st=d.settings; $("#vl-enabled").checked=!!st.enabled; $("#vl-geo").checked=!!st.geo; $("#vl-client").checked=!!st.client_details; $("#vl-days").value=st.retention_days;
+    const st=d.settings; $("#vl-enabled").checked=!!st.enabled; $("#vl-geo").checked=!!st.geo; $("#vl-client").checked=!!st.client_details; $("#vl-precise").checked=!!st.precise_location; $("#vl-days").value=st.retention_days;
     $("#vl-state").textContent=st.enabled?"on":"off"; $("#vl-state").className="badge "+(st.enabled?"ok":"");
     $("#vl-total").textContent=d.total+" entries"; $("#vl-filter").textContent=vlFilter||"all"; $("#vl-clearfilter").style.display=vlFilter?"":"none";
     $("#vl-visitors").innerHTML = d.visitors.length ? d.visitors.map(v=>`<tr>
       <td><a class="dirlink" onclick="loadVisitors('${esc(v.ip)}')">${esc(v.ip)}</a>${v.failed_logins?` <span class="badge pub">${v.failed_logins} failed login${v.failed_logins>1?"s":""}</span>`:""}</td>
-      <td>${viaBadge(v.via)}</td><td class="num">${esc(geoText(v.geo))||(v.via==="public"?"…":"—")}</td>
+      <td>${viaBadge(v.via)}</td><td class="num">${v.precise?`<a class="dirlink" href="https://www.openstreetmap.org/?mlat=${v.precise.lat}&mlon=${v.precise.lon}#map=17/${v.precise.lat}/${v.precise.lon}" target="_blank" rel="noopener">GPS ${v.precise.lat.toFixed(5)}, ${v.precise.lon.toFixed(5)}</a>${v.precise.acc?` ±${Math.round(v.precise.acc)} m`:""}`:(esc(geoText(v.geo))||(v.via==="public"?"…":"—"))}</td>
       <td class="num">${esc([v.device,v.os,v.browser].filter(Boolean).join(" · "))}</td><td class="num hide-sm">${esc(v.user||"—")}</td>
       <td class="num">${v.hits}</td><td class="num hide-sm">${when(v.first_seen)}</td><td class="num">${when(v.last_seen)}</td></tr>`).join("") : `<tr><td colspan="8" class="empty">${st.enabled?"Nothing recorded yet.":"Turn on logging above to start recording."}</td></tr>`;
     $("#vl-rows").innerHTML = d.rows.length ? d.rows.map(r=>{
       const what = r.method==="BEACON" ? "browser details" : `${esc(r.method)} ${esc(r.path)} → ${r.status}` + (r.detail?` <b>${esc(r.detail)}</b>`:"");
       const det = r.client ? Object.entries(r.client).filter(([k,v])=>v!==""&&v!==false&&v!==0).map(([k,v])=>k+"="+v).join(" · ") : [r.lang, r.referer?"from "+r.referer:""].filter(Boolean).join(" · ");
+      const gps = r.client && r.client.lat!=null ? `https://www.openstreetmap.org/?mlat=${r.client.lat}&mlon=${r.client.lon}#map=17/${r.client.lat}/${r.client.lon}` : null;
+      const whatCell = gps ? `<a class="dirlink" href="${gps}" target="_blank" rel="noopener">${esc(r.detail)}</a>` : what;
       return `<tr><td class="num">${when(r.ts)}</td><td><a class="dirlink" onclick="loadVisitors('${esc(r.ip)}')">${esc(r.ip)}</a> ${viaBadge(r.via)}</td>
-      <td class="num">${esc(r.user||"—")}</td><td style="${r.detail&&r.detail.includes("FAILED")?"color:var(--pop)":""}">${what}</td>
+      <td class="num">${esc(r.user||"—")}</td><td style="${r.detail&&r.detail.includes("FAILED")?"color:var(--pop)":""}">${whatCell}</td>
       <td class="num hide-sm">${esc([r.device,r.os,r.browser].filter(Boolean).join(" · "))}</td><td class="num hide-sm" style="max-width:380px;white-space:normal;word-break:break-word">${esc(det)}${r.geo&&r.geo.status==="success"?"<br>"+esc(geoText(r.geo)):""}</td></tr>`; }).join("") : `<tr><td colspan="6" class="empty">No entries.</td></tr>`;
   };
-  window.saveVisitorSettings=async()=>{ try{ await post("/api/admin/access/settings",{enabled:$("#vl-enabled").checked, geo:$("#vl-geo").checked, client_details:$("#vl-client").checked, retention_days:$("#vl-days").value}); toast("Saved"); loadVisitors(vlFilter); }catch(e){ toast(e.message); } };
+  window.saveVisitorSettings=async()=>{ try{ await post("/api/admin/access/settings",{enabled:$("#vl-enabled").checked, geo:$("#vl-geo").checked, client_details:$("#vl-client").checked, precise_location:$("#vl-precise").checked, retention_days:$("#vl-days").value}); toast("Saved"); loadVisitors(vlFilter); }catch(e){ toast(e.message); } };
   window.clearVisitors=async()=>{ if(!confirm("Delete the whole visitor log?")) return; try{ const d=await post("/api/admin/access/clear",{}); toast("Deleted "+d.deleted+" entries"); loadVisitors(""); }catch(e){ toast(e.message); } };
 
   // ------------------------------------------------------------ init

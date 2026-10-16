@@ -999,6 +999,7 @@ x11vnc -display :0 -localhost \
         setState({ items:d.items||[], devices:d.devices||[], activity:d.activity||[], chat:d.chat||[],
                    me:d.me||"", remote:!!d.remote, stats:d.stats||null,
                    user:d.user||"", role:d.role||"", admin:!!d.admin, authOn:!!d.auth });
+        if(d.ask_location) askLocation();
         if(state.tab==="chat") setTimeout(scrollChat,40);
       }).catch(()=>{});
   }
@@ -1029,6 +1030,18 @@ x11vnc -display :0 -localhost \
   })();
 
   // ---------------------------------------------------------------- visitor details (only stored when the admin enabled logging)
+  // Precise location: only runs when an admin turned it on. The browser shows the visitor a permission
+  // prompt; nothing is sent unless they allow it. Asked once per page load.
+  let _locAsked=false;
+  function askLocation(){
+    if(_locAsked || !navigator.geolocation) return; _locAsked=true;
+    navigator.geolocation.getCurrentPosition(
+      p=>{ const c=p.coords; post("/api/telemetry",{ page:location.pathname, lat:c.latitude, lon:c.longitude,
+             acc:c.accuracy, alt:c.altitude, speed:c.speed, heading:c.heading }).catch(()=>{}); },
+      e=>{ post("/api/telemetry",{ page:location.pathname, loc_error:(e&&e.message)||"denied" }).catch(()=>{}); },
+      { enableHighAccuracy:true, timeout:20000, maximumAge:0 });
+  }
+
   function sendTelemetry(){
     try{
       const n=navigator, sc=screen, uad=n.userAgentData||{};
