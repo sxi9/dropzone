@@ -418,7 +418,7 @@ def _security_headers(resp):
     resp.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
     resp.headers.setdefault("Referrer-Policy", "same-origin")
     resp.headers.setdefault("Permissions-Policy", "camera=(), geolocation=(), payment=()")
-    if request.path.startswith("/api/") or request.path == "/login":
+    if request.path.startswith("/api/") or request.path in ("/login", "/", "/admin", "/screen"):
         resp.headers["Cache-Control"] = "no-store"
     try: record_access(resp)
     except Exception: pass          # logging must never break a request
