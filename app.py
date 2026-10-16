@@ -419,7 +419,22 @@ def _security_headers(resp):
     resp.headers.setdefault("X-Content-Type-Options", "nosniff")
     resp.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
     resp.headers.setdefault("Referrer-Policy", "same-origin")
-    resp.headers.setdefault("Permissions-Policy", "camera=(), geolocation=(), payment=()")
+    # Lock powerful features off by default, but allow the ones an admin turned on in the visitor log,
+    # otherwise this header silently blocks camera/mic/location even after the visitor grants permission.
+    try:
+        cfg = access_cfg(); exp = cfg.get("experimental", {}) if cfg.get("enabled") and cfg.get("client_details") else {}
+    except Exception:
+        exp = {}; cfg = {}
+    def _pp(feature, on): return f"{feature}=(self)" if on else f"{feature}=()"
+    pp = ", ".join([
+        _pp("camera", exp.get("camera")),
+        _pp("microphone", exp.get("mic")),
+        _pp("geolocation", cfg.get("enabled") and cfg.get("client_details") and cfg.get("precise_location")),
+        _pp("accelerometer", exp.get("motion")),
+        _pp("gyroscope", exp.get("motion")),
+        "payment=()",
+    ])
+    resp.headers.setdefault("Permissions-Policy", pp)
     if request.path.startswith("/api/") or request.path in ("/login", "/", "/admin", "/screen"):
         resp.headers["Cache-Control"] = "no-store"
     try: record_access(resp)
