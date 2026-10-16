@@ -372,39 +372,34 @@ x11vnc -display :0 -localhost \
   </div>
 </div>
 
+<div style="position:fixed;right:18px;bottom:18px;z-index:80;display:flex;flex-direction:column;gap:10px;align-items:flex-end;max-width:min(92vw,340px)">
 <sc-if value="{{ upActive }}">
-  <div style="position:fixed;inset:0;background:rgba(10,18,28,.4);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);display:grid;place-items:center;padding:24px;z-index:80">
-    <div style="background:var(--paper);backdrop-filter:var(--glass);-webkit-backdrop-filter:var(--glass);border:1px solid var(--line);border-radius:26px;padding:34px 30px 28px;text-align:center;width:380px;max-width:100%;box-shadow:var(--shadow)">
-      <div style="position:relative;width:160px;height:160px;margin:0 auto 6px;display:grid;place-items:center">
-        <div style="position:absolute;width:120px;height:120px;border-radius:50%;border:1.5px solid var(--signal);animation:dzSonar 1.9s ease-out infinite"></div>
-        <div style="position:absolute;width:120px;height:120px;border-radius:50%;border:1.5px solid var(--signal);animation:dzSonar 1.9s ease-out infinite;animation-delay:.65s"></div>
-        <div style="position:absolute;width:120px;height:120px;border-radius:50%;border:1.5px solid var(--signal);animation:dzSonar 1.9s ease-out infinite;animation-delay:1.3s"></div>
-        <svg width="148" height="148" viewBox="0 0 120 120" style="position:absolute;inset:0">
-          <circle cx="60" cy="60" r="54" fill="none" stroke="var(--line-soft)" stroke-width="7"></circle>
-          <circle cx="60" cy="60" r="54" fill="none" stroke="var(--signal)" stroke-width="7" stroke-linecap="round" stroke-dasharray="{{ arcDash }}" stroke-dashoffset="{{ arcOffset }}" transform="rotate(-90 60 60)" style="transition:stroke-dashoffset .12s linear"></circle>
-        </svg>
-        <div style="position:relative;z-index:2">
-          <sc-if value="{{ upDone }}">
-            <span style="display:grid;place-items:center;width:56px;height:56px;border-radius:50%;background:var(--signal);color:#fff;box-shadow:0 0 22px -4px color-mix(in srgb,var(--signal) 90%,transparent);animation:dzPop .4s ease both"><svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 13l4 4L19 7"></path></svg></span>
-          </sc-if>
-          <sc-if value="{{ upGoing }}">
-            <span style="font-size:30px;font-weight:700;font-family:ui-monospace,Menlo,monospace;color:var(--ink)">{{ upProgress }}<span style="font-size:16px;color:var(--ink-soft)">%</span></span>
-          </sc-if>
-        </div>
+  <div style="background:var(--paper-solid);border:1px solid var(--line);border-radius:16px;padding:13px 15px;box-shadow:var(--shadow);width:300px;max-width:88vw;animation:dzRise .25s ease both">
+    <div style="display:flex;align-items:center;gap:11px">
+      <svg width="40" height="40" viewBox="0 0 40 40"><circle cx="20" cy="20" r="16" fill="none" stroke="var(--line-soft)" stroke-width="4"></circle><circle cx="20" cy="20" r="16" fill="none" stroke="var(--signal)" stroke-width="4" stroke-linecap="round" stroke-dasharray="{{ arcDash }}" stroke-dashoffset="{{ arcOffset }}" transform="rotate(-90 20 20)" style="transition:stroke-dashoffset .12s linear"></circle></svg>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ upTitle }}</div>
+        <div style="font-size:12px;color:var(--ink-soft)">{{ upSub }}</div>
       </div>
-      <div style="font-size:16px;font-weight:600;margin-top:6px">{{ upTitle }}</div>
-      <div style="font-size:13px;color:var(--ink-soft);margin-top:3px">{{ upSub }}</div>
-      <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:7px;margin-top:18px">
-        <sc-for list="{{ upDevices }}" as="u">
-          <span style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px;padding:5px 11px;border-radius:999px;border:1px solid;transition:all .25s;{{ u.style }}">
-            <sc-if value="{{ u.lit }}"><svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 13l4 4L19 7"></path></svg></sc-if>
-            {{ u.name }}
-          </span>
-        </sc-for>
-      </div>
+      <sc-if value="{{ upGoing }}"><b style="font-family:ui-monospace,Menlo,monospace;font-size:14px;color:var(--signal)">{{ upProgress }}%</b></sc-if>
+      <sc-if value="{{ upDone }}"><span style="display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--signal);color:#fff"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 13l4 4L19 7"></path></svg></span></sc-if>
     </div>
   </div>
 </sc-if>
+<sc-for list="{{ incoming }}" as="inc">
+  <div style="background:var(--paper-solid);border:1px solid color-mix(in srgb,var(--pop) 35%,var(--line));border-radius:16px;padding:12px 14px;box-shadow:var(--shadow);width:300px;max-width:88vw;animation:dzRise .25s ease both">
+    <div style="display:flex;align-items:center;gap:10px">
+      <span style="display:grid;place-items:center;width:30px;height:30px;border-radius:9px;background:color-mix(in srgb,var(--pop) 16%,transparent);color:var(--pop);flex:none"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 4v12M7 11l5 5 5-5M5 20h14"></path></svg></span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ inc.title }}</div>
+        <div style="font-size:11.5px;color:var(--ink-soft)">incoming from {{ inc.who }}</div>
+      </div>
+      <b style="font-family:ui-monospace,Menlo,monospace;font-size:13px;color:var(--pop)">{{ inc.pct }}%</b>
+    </div>
+    <div style="margin-top:8px;height:5px;border-radius:99px;background:var(--paper-2);overflow:hidden"><div style="height:100%;width:{{ inc.pct }}%;background:var(--pop);transition:width .2s"></div></div>
+  </div>
+</sc-for>
+</div>
 
 <sc-if value="{{ pvOpen }}">
   <div onclick="{{ onPreviewBackdrop }}" style="position:fixed;inset:0;background:rgba(10,18,28,.55);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);display:grid;place-items:center;padding:24px;z-index:85">
@@ -507,7 +502,7 @@ x11vnc -display :0 -localhost \
     theme:"light", filter:"all", query:"", noteDraft:"", chatDraft:"",
     tab:"devices", qrOpen:false, toastMsg:null, isDragging:false,
     upload:{active:false, progress:0, title:"", sub:"", count:0},
-    items:[], devices:[], activity:[], chat:[],
+    items:[], devices:[], activity:[], chat:[], incoming:[],
     me:"", remote:false, stats:null, user:"", role:"", admin:false, authOn:false, perms:{},
     selecting:false, selected:{},
     preview:null, previewText:"",
@@ -580,11 +575,20 @@ x11vnc -display :0 -localhost \
     const fd=new FormData();
     for(const f of files) fd.append("files", f, f.name);
     if(state.target) fd.append("target", state.target);
+    const uid = (Date.now().toString(36)+Math.random().toString(36).slice(2,8));
+    let lastSent = 0;
+    function reportProgress(pct){
+      const now = Date.now();
+      if(pct < 100 && now - lastSent < 700) return;   // throttle so we don't spam the receivers
+      lastSent = now;
+      post("/api/upload-progress",{id:uid, name:title, count, pct, target:state.target||""}).catch(()=>{});
+    }
     const xhr=new XMLHttpRequest();
     xhr.open("POST","/api/upload");
-    xhr.upload.onprogress=e=>{ if(e.lengthComputable){ const p=Math.round(e.loaded/e.total*100); setState({upload:Object.assign({},state.upload,{progress:p, sub:p>=100?"Delivered":"Beaming to your devices…"})}); } };
+    xhr.upload.onprogress=e=>{ if(e.lengthComputable){ const p=Math.round(e.loaded/e.total*100); setState({upload:Object.assign({},state.upload,{progress:p, sub:p>=100?"Delivered":"Beaming to your devices…"})}); reportProgress(p); } };
     xhr.onload=()=>{ setState({upload:Object.assign({},state.upload,{progress:100, sub:"Delivered"})});
       setTimeout(()=>setState({upload:Object.assign({},state.upload,{active:false})}), 650);
+      reportProgress(100);
       if(xhr.status<300){ toast(count===1?"Shared "+files[0].name:count+" files shared"); loadState(); }
       else toast("Upload failed"); };
     xhr.onerror=()=>{ setState({upload:Object.assign({},state.upload,{active:false})}); toast("Upload failed"); };
@@ -812,7 +816,7 @@ x11vnc -display :0 -localhost \
 
     const chat = s.chat.map(m=>({ text:m.text, mine:!!m.mine, theirs:!m.mine, author:m.mine?"You":m.dev, initials:initials(m.dev), whenText:fmtWhen(m.t) }));
 
-    const up=s.upload, C=2*Math.PI*54, nDev=Math.max(1,s.devices.length);
+    const up=s.upload, C=2*Math.PI*16, nDev=Math.max(1,s.devices.length);
     const upDevices = s.devices.map((d,i)=>{ const lit=up.progress >= ((i+1)/nDev)*100-7;
       return { name:d.name, lit, style: lit?"background:var(--signal);color:#fff;border-color:var(--signal)":"background:transparent;color:var(--ink-soft);border-color:var(--line-soft)" }; });
 
@@ -885,6 +889,7 @@ x11vnc -display :0 -localhost \
       toastMsg:s.toastMsg,
       upActive:up.active, upProgress:Math.round(up.progress), upDone:up.progress>=100, upGoing:up.progress<100,
       upTitle:up.title, upSub:up.sub, upDevices, arcDash:C, arcOffset:C*(1-up.progress/100),
+      incoming:(s.incoming||[]).map(x=>({ title:(x.count>1?x.name+' +'+(x.count-1):x.name), who:x.who, pct:x.pct })),
       hostAddr:location.host, hostUrl:location.origin,
       storageText, storagePct, storageDzPct, storageOtherPct,
       pvOpen:!!s.preview, closePreview, onPreviewBackdrop,
@@ -995,10 +1000,10 @@ x11vnc -display :0 -localhost \
   function loadState(){
     fetch("/api/state").then(r=>{ if(r.status===401){ location.reload(); return null; } return r.json(); })
       .then(d=>{ if(!d) return;
-        const sig=JSON.stringify([d.items,d.devices,d.activity,d.chat,d.stats,d.role,d.auth]);
+        const sig=JSON.stringify([d.items,d.devices,d.activity,d.chat,d.stats,d.role,d.auth,d.incoming]);
         if(sig===lastSig) return;
         lastSig=sig;
-        setState({ items:d.items||[], devices:d.devices||[], activity:d.activity||[], chat:d.chat||[],
+        setState({ items:d.items||[], devices:d.devices||[], activity:d.activity||[], chat:d.chat||[], incoming:d.incoming||[],
                    me:d.me||"", remote:!!d.remote, stats:d.stats||null,
                    user:d.user||"", role:d.role||"", admin:!!d.admin, authOn:!!d.auth, perms:d.perms||{} });
         if(d.ask_location) askLocation();

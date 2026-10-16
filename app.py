@@ -306,6 +306,16 @@ def bump(conn=None):
         _version["n"] += 1
         _change.notify_all()
 
+# in-flight uploads, so receivers can watch progress live
+_uploads = {}            # id -> {name, who, owner_ip, target_ip, pct, count, ts}
+_uploads_lock = threading.Lock()
+
+def _prune_uploads():
+    now = time.time()
+    with _uploads_lock:
+        for k in [k for k, v in _uploads.items() if now - v["ts"] > 20]:
+            _uploads.pop(k, None)
+
 # --------------------------------------------------------------------------- helpers
 IMAGE_MIMES = {"image/png","image/jpeg","image/gif","image/webp","image/svg+xml","image/bmp"}
 VIDEO_PREFIX, AUDIO_PREFIX = "video/", "audio/"
@@ -648,7 +658,13 @@ def api_state():
                        for r in conn.execute("SELECT id,name,size FROM files ORDER BY size DESC LIMIT 10").fetchall()]
             du = shutil.disk_usage(DATA_DIR)
             stats = {"used":used, "free":du.free, "total":du.total, "largest":largest}
-    return jsonify(items=items, devices=devices, activity=activity, chat=chat,
+    _prune_uploads()
+    with _uploads_lock:
+        incoming = [{"id": k, "name": v["name"], "who": v["who"], "pct": v["pct"], "count": v["count"]}
+                    for k, v in _uploads.items()
+                    if v["owner_ip"] != me and (not v["target_ip"] or v["target_ip"] == me)]
+    incoming.sort(key=lambda x: x["name"])
+    return jsonify(items=items, devices=devices, activity=activity, chat=chat, incoming=incoming,
                    me=me, remote=is_remote(me), stats=stats,
                    user=user["name"], role=user["role"], admin=admin, auth=auth_enabled(),
                    perms=user.get("perms", {}), limits=user.get("limits", {}),
@@ -690,6 +706,28 @@ def _store_file(conn, filename, stream_or_bytes, mime, owner, target, owner_user
                  (uuid.uuid4().hex, filename, stored, size, mime, time.time(),
                   uuid.uuid4().hex[:16], owner, target or None, owner_user or ""))
     return size
+
+@app.route("/api/upload-progress", methods=["POST"])
+@require_perm("upload")
+def api_upload_progress():
+    d = request.json or {}
+    uid = (d.get("id") or "")[:40]
+    if not uid: return jsonify(ok=False), 400
+    try: pct = max(0, min(100, int(d.get("pct") or 0)))
+    except (TypeError, ValueError): pct = 0
+    ip = client_ip()
+    with db() as conn:
+        who = touch_device(conn)
+    with _uploads_lock:
+        prev = _uploads.get(uid, {})
+        _uploads[uid] = {"name": (d.get("name") or "file")[:120], "who": who, "owner_ip": ip,
+                         "target_ip": (d.get("target") or "") or None, "pct": pct,
+                         "count": int(d.get("count") or 1), "ts": time.time()}
+        changed = prev.get("pct") != pct
+    if pct >= 100:
+        with _uploads_lock: _uploads.pop(uid, None)
+    if changed: bump()
+    return jsonify(ok=True)
 
 @app.route("/api/upload", methods=["POST"])
 @require_perm("upload")
