@@ -34,6 +34,12 @@ All notable changes to this project are documented here.
 - Stray "[object Object]" next to the burn-after-read chip.
 - **Copy buttons on notes and share links** now work over plain HTTP on the LAN. The Clipboard API is only available in secure contexts (HTTPS or localhost), so the old code silently did nothing while still showing "Copied". Added an `execCommand("copy")` fallback and an honest toast when the browser blocks copying.
 
+### Per-user privileges & limits
+- Admins can now set, per account, what each user may do: download/preview files, upload, share text, delete own items, chat, use the live screen, pull URLs, and whether they see everyone's items or only their own. Edited from Accounts -> Privileges, with Read-only / Upload-only / Screen-access presets.
+- Per-account limits: max upload size, storage quota, max number of items, and a "private networks only" switch that blocks the account from the public internet.
+- Guest accounts: set an expiry date after which the account can no longer sign in.
+- Enforced server-side on every endpoint; the main page hides controls a user isn't allowed to use. Uploads now record the owning account (owner_user) for quota and ownership.
+
 ## [5.0.0] — Home hub release
 
 ### Added

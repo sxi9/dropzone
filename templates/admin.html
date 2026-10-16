@@ -293,11 +293,13 @@
     $("#t-free").textContent=fmt(s.disk_free); $("#t-total").textContent=fmt(s.disk_total); $("#datadir").textContent="Data folder: "+s.data_dir;
     $("#largest").innerHTML = s.largest.length ? s.largest.map(f=>`<tr><td class="name" title="${esc(f.name)}">${esc(f.name)}</td><td class="num">${fmt(f.size)}</td><td class="num hide-sm">${when(f.created)}</td>
       <td style="text-align:right;white-space:nowrap"><a class="icon" href="/file/${f.id}/download" title="Download">${ico("down")}</a><button class="icon del" title="Delete" onclick="delItem('${f.id}','${esc(f.name)}')">${ico("trash")}</button></td></tr>`).join("") : `<tr><td colspan="4" class="empty">Nothing shared yet.</td></tr>`;
+    window._users = d.users; window._permKeys = d.perm_keys || [];
     $("#users").innerHTML = d.users.map(u=>`<tr><td><b>${esc(u.name)}</b>${u.name===me?' <span class="badge">you</span>':''}${u.legacy_pin?' <span class="badge">legacy PIN</span>':''}</td>
       <td><span class="badge ${u.role==='admin'?'admin':''}">${u.role}</span></td><td class="num hide-sm">${when(u.updated)}</td>
       <td style="text-align:right;white-space:nowrap">
         ${u.legacy_pin?'':`<button class="btn" onclick="resetPw('${esc(u.name)}')">Reset password</button>
         <button class="btn" onclick="setRole('${esc(u.name)}','${u.role==='admin'?'user':'admin'}')" ${u.name===me?'disabled':''}>Make ${u.role==='admin'?'user':'admin'}</button>
+        <button class="btn" onclick='editPerms(${JSON.stringify(u.name)})'>Privileges</button>
         <button class="icon del" title="Remove account" onclick="removeUser('${esc(u.name)}')" ${u.name===me?'disabled':''}>${ico("trash")}</button>`}
       </td></tr>`).join("");
     renderRoots(d.roots);
@@ -317,6 +319,46 @@
   window.changeMyPassword=async ev=>{ ev.preventDefault(); const f=ev.target;
     if(f.new.value!==f.again.value){ toast("New passwords don't match"); return false; }
     try{ await post("/api/password",{current:f.current.value,new:f.new.value}); toast("Password changed - other devices signed out"); f.reset(); }catch(e){ toast(e.message); } return false; };
+  const PERM_LABEL = { download:"Download & preview files", upload:"Upload files", notes:"Share text / notes", delete:"Delete own items", chat:"Use chat", screen:"Use the live screen", fetch_url:"Pull URLs from the web", see_all:"See everyone's items (off = only their own)" };
+  const PRESETS = {
+    "Full user":   {download:1,upload:1,notes:1,delete:1,chat:1,screen:0,fetch_url:0,see_all:1},
+    "Read-only":   {download:1,upload:0,notes:0,delete:0,chat:1,screen:0,fetch_url:0,see_all:1},
+    "Upload-only": {download:0,upload:1,notes:1,delete:1,chat:1,screen:0,fetch_url:0,see_all:0},
+    "Screen access": {download:1,upload:1,notes:1,delete:1,chat:1,screen:1,fetch_url:0,see_all:1},
+  };
+  window.editPerms = function(name){
+    const u = (window._users||[]).find(x=>x.name===name); if(!u) return;
+    if(u.role==="admin"){ toast("Admins already have every privilege"); return; }
+    const perms = u.perms||{}, lim = u.limits||{};
+    const keys = (window._permKeys&&window._permKeys.length?window._permKeys:Object.keys(PERM_LABEL));
+    const cb = keys.map(k=>`<label style="display:flex;align-items:center;gap:9px;font-size:13.5px;color:var(--ink);padding:3px 0"><input type="checkbox" class="pp" data-k="${k}" ${perms[k]?"checked":""} style="width:17px;height:17px"> ${esc(PERM_LABEL[k]||k)}</label>`).join("");
+    const presetBtns = Object.keys(PRESETS).map(n=>`<button class="btn" type="button" onclick="applyPreset('${n}')">${n}</button>`).join(" ");
+    const expDate = u.expires ? new Date(u.expires*1000).toISOString().slice(0,10) : "";
+    const html = `<div onclick="if(event.target===this)this.remove()" style="position:fixed;inset:0;background:rgba(10,18,28,.5);backdrop-filter:blur(8px);display:grid;place-items:center;padding:20px;z-index:60">
+      <div class="card" style="max-width:520px;width:100%;margin:0;max-height:90vh;overflow:auto">
+        <h2 style="margin-top:0">Privileges — ${esc(name)}</h2>
+        <div class="row" style="margin-bottom:12px">${presetBtns}</div>
+        <div id="pp-list" style="display:grid;grid-template-columns:1fr;gap:2px;margin-bottom:14px">${cb}</div>
+        <h3 style="font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--signal);font-family:ui-monospace,Menlo,monospace">Limits (0 = unlimited)</h3>
+        <div class="row" style="margin:8px 0 14px">
+          <label>Max upload (MB)<input id="pl-max_upload_mb" type="number" min="0" value="${lim.max_upload_mb||0}" style="width:120px"></label>
+          <label>Storage quota (MB)<input id="pl-quota_mb" type="number" min="0" value="${lim.quota_mb||0}" style="width:130px"></label>
+          <label>Max items<input id="pl-max_items" type="number" min="0" value="${lim.max_items||0}" style="width:110px"></label>
+        </div>
+        <label style="display:flex;align-items:center;gap:9px;font-size:13.5px;color:var(--ink);margin-bottom:10px"><input type="checkbox" id="pl-lan_only" ${lim.lan_only?"checked":""} style="width:17px;height:17px"> Private networks only (block this account from the public internet)</label>
+        <label style="display:block;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:14px">Account expires on (blank = never)<br><input id="pl-expires" type="date" value="${expDate}" style="margin-top:5px"></label>
+        <div class="row"><button class="btn go" onclick="savePerms('${esc(name)}', this)">Save privileges</button><button class="btn" onclick="this.closest('[style*=fixed]').remove()">Cancel</button></div>
+      </div></div>`;
+    const wrap = document.createElement("div"); wrap.innerHTML = html; document.body.appendChild(wrap.firstElementChild);
+  };
+  window.applyPreset = function(n){ const pp=PRESETS[n]; document.querySelectorAll(".pp").forEach(c=>{ if(c.dataset.k in pp) c.checked=!!pp[c.dataset.k]; }); };
+  window.savePerms = async function(name, btn){
+    const perms={}; document.querySelectorAll(".pp").forEach(c=>perms[c.dataset.k]=c.checked);
+    const limits={ max_upload_mb:+document.getElementById("pl-max_upload_mb").value||0, quota_mb:+document.getElementById("pl-quota_mb").value||0, max_items:+document.getElementById("pl-max_items").value||0, lan_only:document.getElementById("pl-lan_only").checked };
+    const ed=document.getElementById("pl-expires").value; const expires = ed ? Math.floor(new Date(ed+"T23:59:59").getTime()/1000) : null;
+    try{ await post("/api/admin/users",{name,perms,limits,expires}); toast("Privileges saved"); btn.closest("[style*=fixed]").remove(); load(); }
+    catch(e){ toast(e.message); }
+  };
   window.saveUser=async ev=>{ ev.preventDefault(); const f=ev.target;
     try{ const d=await post("/api/admin/users",{name:f.name.value,role:f.role.value,password:f.password.value}); toast("Saved "+f.name.value+" as "+d.role); f.reset(); load(); }catch(e){ toast(e.message); } return false; };
   window.resetPw=async name=>{ const pw=prompt("New password for "+name+" (min 6 characters):"); if(pw==null) return;

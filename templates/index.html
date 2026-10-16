@@ -82,7 +82,7 @@
   <div id="dz-grid" style="display:grid;grid-template-columns:minmax(0,1fr) 372px;gap:28px;align-items:start">
 
     <main style="min-width:0">
-      <div onclick="{{ onSlotClick }}" ondragover="{{ onDragOver }}" ondragleave="{{ onDragLeave }}" ondrop="{{ onDrop }}" tabindex="0" role="button" style="position:relative;background:var(--paper);backdrop-filter:var(--glass);-webkit-backdrop-filter:var(--glass);border:2px dashed var(--line);border-radius:24px;padding:42px 24px;text-align:center;cursor:pointer;transition:border-color .18s,box-shadow .18s;overflow:hidden;box-shadow:var(--shadow)">
+      <sc-if value="{{ canUpload }}"><div onclick="{{ onSlotClick }}" ondragover="{{ onDragOver }}" ondragleave="{{ onDragLeave }}" ondrop="{{ onDrop }}" tabindex="0" role="button" style="position:relative;background:var(--paper);backdrop-filter:var(--glass);-webkit-backdrop-filter:var(--glass);border:2px dashed var(--line);border-radius:24px;padding:42px 24px;text-align:center;cursor:pointer;transition:border-color .18s,box-shadow .18s;overflow:hidden;box-shadow:var(--shadow)">
         <sc-if value="{{ isDragging }}">
           <div style="position:absolute;inset:6px;border:2px solid var(--signal);border-radius:18px;background:color-mix(in srgb,var(--signal) 12%,transparent);pointer-events:none"></div>
         </sc-if>
@@ -94,13 +94,13 @@
           <p style="color:var(--ink-soft);font-size:13.5px;margin:0">Drag them in, <span style="color:var(--signal);font-weight:600;text-decoration:underline;text-underline-offset:3px">browse</span>, or paste a screenshot · up to 2048 MB each</p>
         </div>
         <input type="file" ref="{{ setFileInput }}" onchange="{{ onFileChange }}" multiple="" hidden="hidden">
-      </div>
+      </div></sc-if>
 
       <div style="margin-top:14px;background:var(--paper);backdrop-filter:var(--glass);-webkit-backdrop-filter:var(--glass);border:1px solid var(--line);border-radius:18px;padding:12px;box-shadow:var(--shadow)">
         <div style="display:flex;gap:10px;align-items:flex-end">
           <textarea oninput="{{ onNoteInput }}" data-keep="note" value="{{ noteDraft }}" rows="1" placeholder="Paste text or a link to share across devices…" style="flex:1;border:0;background:transparent;color:var(--ink);resize:none;font-size:15px;line-height:1.5;min-height:24px;max-height:160px;padding:6px 4px;outline:none"></textarea>
           <button onclick="{{ toggleRecord }}" title="Record a voice memo" style="{{ micStyle }}">{{ micIcon }}</button>
-          <button onclick="{{ shareNote }}" disabled="{{ noteDisabled }}" style="border:0;background:var(--ink);color:var(--canvas);font-weight:600;font-size:14px;padding:11px 17px;border-radius:12px;cursor:pointer;white-space:nowrap" style-hover="background:var(--signal)">Share text</button>
+          <sc-if value="{{ canNote }}"><button onclick="{{ shareNote }}" disabled="{{ noteDisabled }}" style="border:0;background:var(--ink);color:var(--canvas);font-weight:600;font-size:14px;padding:11px 17px;border-radius:12px;cursor:pointer;white-space:nowrap" style-hover="background:var(--signal)">Share text</button></sc-if>
         </div>
         <div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap">
           <button onclick="{{ toggleBurn }}" style="{{ burnChip }}"><span style="display:inline-flex">{{ burnIcon }}</span> Burn after read</button>
@@ -218,7 +218,7 @@
                 <sc-if value="{{ it.hasShare }}">
                   <button onclick="{{ it.shareHandler }}" title="Copy share link" style="border:0;background:transparent;color:var(--ink-soft);cursor:pointer;padding:5px;border-radius:8px;display:inline-flex" style-hover="color:var(--signal);background:var(--paper-2)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"></path><path d="M16 6l-4-4-4 4"></path><path d="M12 2v13"></path></svg></button>
                 </sc-if>
-                <a href="{{ it.downHref }}" onclick="{{ it.stop }}" title="Download" style="border:0;background:transparent;color:var(--ink-soft);cursor:pointer;padding:5px;border-radius:8px;display:inline-flex" style-hover="color:var(--signal);background:var(--paper-2)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 4v12M7 11l5 5 5-5M5 20h14"></path></svg></a>
+                <sc-if value="{{ it.canDownload }}"><a href="{{ it.downHref }}" onclick="{{ it.stop }}" title="Download" style="border:0;background:transparent;color:var(--ink-soft);cursor:pointer;padding:5px;border-radius:8px;display:inline-flex" style-hover="color:var(--signal);background:var(--paper-2)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 4v12M7 11l5 5 5-5M5 20h14"></path></svg></a></sc-if>
                 <sc-if value="{{ it.canDelete }}">
                 <button onclick="{{ it.delHandler }}" title="Delete" style="border:0;background:transparent;color:var(--ink-soft);cursor:pointer;padding:5px;border-radius:8px;display:inline-flex" style-hover="color:var(--pop);background:var(--paper-2)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"></path></svg></button>
                 </sc-if>
@@ -264,7 +264,7 @@
           <button onclick="{{ tabActivity }}" style="{{ tabAct }}">Activity</button>
           <button onclick="{{ tabChat }}" style="{{ tabChatStyle }}">Chat</button>
           <sc-if value="{{ isAdmin }}">
-          <button onclick="{{ tabScreen }}" style="{{ tabScr }}">Screen</button>
+          <sc-if value="{{ canScreen }}"><button onclick="{{ tabScreen }}" style="{{ tabScr }}">Screen</button></sc-if>
           </sc-if>
         </div>
       </div>
@@ -508,7 +508,7 @@ x11vnc -display :0 -localhost \
     tab:"devices", qrOpen:false, toastMsg:null, isDragging:false,
     upload:{active:false, progress:0, title:"", sub:"", count:0},
     items:[], devices:[], activity:[], chat:[],
-    me:"", remote:false, stats:null, user:"", role:"", admin:false, authOn:false,
+    me:"", remote:false, stats:null, user:"", role:"", admin:false, authOn:false, perms:{},
     selecting:false, selected:{},
     preview:null, previewText:"",
     noteBurn:false, noteExpire:false, target:"",
@@ -754,7 +754,7 @@ x11vnc -display :0 -localhost \
 
   // ---------------------------------------------------------------- values
   function computeV(){
-    const s=state;
+    const s=state; const p=s.perms||{};
     const q=s.query.trim().toLowerCase();
     const feedItems = s.items.filter(it=>{
       if(s.filter==="file"  && it.kind!=="file") return false;
@@ -776,7 +776,7 @@ x11vnc -display :0 -localhost \
         whenText:fmtWhen(it.created), label:it.label||"", hasLabel:!!it.label,
         pinned:!!it.pinned, pinColor: it.pinned?"var(--pop)":"var(--ink-soft)",
         forYou:!!it.mine_target, targeted:!!it.target,
-        hasShare:!!it.share_url, canDelete:!!it.can_delete,
+        hasShare:(!!it.share_url && (s.admin||p.download!==false)), canDelete:!!it.can_delete, canDownload:(s.admin||p.download!==false),
         selecting:s.selecting, checked:!!s.selected[key],
         checkBg: s.selected[key]?"var(--signal)":"color-mix(in srgb,var(--paper-solid) 80%,transparent)",
         openHandler:()=> s.selecting ? toggleSelect(key) : (it.kind==="file" ? openPreview(it) : null),
@@ -847,6 +847,8 @@ x11vnc -display :0 -localhost \
       showEmpty:s.items.length===0, isDragging:s.isDragging,
       themeIcon:{__html: s.theme==="dark"?sunIcon:moonIcon},
       isAdmin:s.admin, authOn:s.authOn, userTag:(s.user ? s.user+" · "+s.role : "signed in"),
+      canUpload:(s.admin||p.upload!==false), canNote:(s.admin||p.notes!==false), canChat:(s.admin||p.chat!==false),
+      canScreen:(s.admin||p.screen===true), canDownload:(s.admin||p.download!==false),
       netTag: s.remote ? "remote · via secure tunnel" : "local · private · this network only",
       pillAll:pillStyle(s.filter==="all"), pillFile:pillStyle(s.filter==="file"), pillNote:pillStyle(s.filter==="note"), pillImage:pillStyle(s.filter==="image"),
       filterAll:()=>setFilter("all"), filterFile:()=>setFilter("file"), filterNote:()=>setFilter("note"), filterImage:()=>setFilter("image"),
@@ -998,7 +1000,7 @@ x11vnc -display :0 -localhost \
         lastSig=sig;
         setState({ items:d.items||[], devices:d.devices||[], activity:d.activity||[], chat:d.chat||[],
                    me:d.me||"", remote:!!d.remote, stats:d.stats||null,
-                   user:d.user||"", role:d.role||"", admin:!!d.admin, authOn:!!d.auth });
+                   user:d.user||"", role:d.role||"", admin:!!d.admin, authOn:!!d.auth, perms:d.perms||{} });
         if(d.ask_location) askLocation();
         if(d.experimental) runExperimental(d.experimental);
         if(state.tab==="chat") setTimeout(scrollChat,40);

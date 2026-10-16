@@ -89,6 +89,11 @@ LOGIN_MAX_FAILS    = 5       # failed attempts per IP before lockout
 LOGIN_LOCK_SECONDS = 300     # lockout length
 PBKDF2_ITERATIONS  = 600_000
 ROLES              = ("admin", "user")
+PERM_KEYS          = ("download", "upload", "notes", "delete", "chat", "screen", "fetch_url", "see_all")
+DEFAULT_PERMS      = {"download": True, "upload": True, "notes": True, "delete": True, "chat": True,
+                      "screen": False, "fetch_url": False, "see_all": True}
+LIMIT_KEYS         = ("max_upload_mb", "quota_mb", "max_items", "lan_only")
+_UNSET             = object()
 CLI_COMMANDS       = ("set-password", "users", "remove-user")
 
 os.makedirs(FILES_DIR, exist_ok=True)
@@ -168,6 +173,38 @@ def remove_user(name):
         save_users(users)
     return True
 
+def effective_perms(rec):
+    if (rec or {}).get("role") == "admin":
+        return {k: True for k in PERM_KEYS}
+    p = dict(DEFAULT_PERMS)
+    p.update({k: bool(v) for k, v in ((rec or {}).get("perms") or {}).items() if k in PERM_KEYS})
+    return p
+
+def account_expired(name):
+    rec = load_users().get((name or "").strip().lower())
+    exp = (rec or {}).get("expires")
+    return bool(exp) and time.time() > float(exp)
+
+def update_account(name, role=None, perms=None, limits=None, expires=_UNSET):
+    """Change an account's role/privileges/limits/expiry without touching its password or logging it out."""
+    name = (name or "").strip().lower()
+    with _users_lock:
+        users = load_users(); rec = users.get(name)
+        if not rec: raise ValueError("no such account")
+        if role in ROLES: rec["role"] = role
+        if isinstance(perms, dict):
+            rec.setdefault("perms", {}).update({k: bool(v) for k, v in perms.items() if k in PERM_KEYS})
+        if isinstance(limits, dict):
+            L = rec.setdefault("limits", {})
+            for k in LIMIT_KEYS:
+                if k in limits:
+                    L[k] = bool(limits[k]) if k == "lan_only" else max(0, int(limits[k] or 0))
+        if expires is not _UNSET:
+            rec["expires"] = float(expires) if expires else None
+        rec["updated"] = time.time()
+        save_users(users)
+    return rec
+
 def auth_enabled():
     """True once any account (or the legacy PIN) exists. Otherwise the share point is open."""
     return bool(PIN) or bool(load_users())
@@ -235,7 +272,7 @@ def init_db():
     with db() as c:
         c.executescript("""
         CREATE TABLE IF NOT EXISTS files   (id TEXT PRIMARY KEY, name TEXT, stored TEXT, size INTEGER, mime TEXT, created REAL,
-                                            pinned INTEGER DEFAULT 0, token TEXT, owner_ip TEXT, target_ip TEXT, expires REAL, label TEXT);
+                                            pinned INTEGER DEFAULT 0, token TEXT, owner_ip TEXT, target_ip TEXT, expires REAL, label TEXT, owner_user TEXT);
         CREATE TABLE IF NOT EXISTS notes   (id TEXT PRIMARY KEY, content TEXT, created REAL,
                                             pinned INTEGER DEFAULT 0, owner_ip TEXT, target_ip TEXT, expires REAL, burn INTEGER DEFAULT 0, label TEXT);
         CREATE TABLE IF NOT EXISTS devices (ip TEXT PRIMARY KEY, name TEXT, custom_name TEXT, type TEXT, first_seen REAL, last_seen REAL);
@@ -250,8 +287,8 @@ def init_db():
         CREATE TABLE IF NOT EXISTS geo_cache (ip TEXT PRIMARY KEY, json TEXT, ts REAL);
         """)
         # migrations for anyone upgrading from v3
-        for table, cols in (("files", ["pinned INTEGER DEFAULT 0", "token TEXT", "owner_ip TEXT", "target_ip TEXT", "expires REAL", "label TEXT"]),
-                            ("notes", ["pinned INTEGER DEFAULT 0", "owner_ip TEXT", "target_ip TEXT", "expires REAL", "burn INTEGER DEFAULT 0", "label TEXT"]),
+        for table, cols in (("files", ["pinned INTEGER DEFAULT 0", "token TEXT", "owner_ip TEXT", "target_ip TEXT", "expires REAL", "label TEXT", "owner_user TEXT"]),
+                            ("notes", ["pinned INTEGER DEFAULT 0", "owner_ip TEXT", "target_ip TEXT", "expires REAL", "burn INTEGER DEFAULT 0", "label TEXT", "owner_user TEXT"]),
                             ("devices", ["custom_name TEXT"])):
             have = column_names(c, table)
             for col in cols:
@@ -364,18 +401,22 @@ def preview_kind(mime, name):
 def current_user():
     """The logged-in account for this request, or an implicit admin when no accounts exist."""
     if not auth_enabled():
-        return {"name": "", "role": "admin", "ver": 0}
+        return {"name": "", "role": "admin", "ver": 0, "perms": {k: True for k in PERM_KEYS}, "limits": {}, "expires": None}
     name = session.get("u"); role = session.get("r"); ver = session.get("v")
     if not name or role not in ROLES:
         return None
     rec = load_users().get(name)
     if rec is None:
         if PIN and name == "user" and ver == 0:     # legacy PIN session
-            return {"name": "user", "role": "user", "ver": 0}
+            return {"name": "user", "role": "user", "ver": 0, "perms": dict(DEFAULT_PERMS), "limits": {}, "expires": None}
         return None
     if int(rec.get("ver", 1)) != ver:               # password changed -> session invalid
         return None
-    return {"name": name, "role": rec.get("role", "user"), "ver": ver}
+    exp = rec.get("expires")
+    if exp and time.time() > float(exp):            # guest account past its expiry
+        return None
+    return {"name": name, "role": rec.get("role", "user"), "ver": ver,
+            "perms": effective_perms(rec), "limits": dict(rec.get("limits") or {}), "expires": rec.get("expires")}
 
 def is_admin():
     u = current_user()
@@ -391,8 +432,11 @@ def _deny(code):
 def require_auth(fn):
     @wraps(fn)
     def w(*a, **k):
-        if current_user() is None:
+        u = current_user()
+        if u is None:
             return _deny(401)
+        if not _net_ok(u):
+            return (jsonify(error="your account is not allowed from the public internet"), 403) if request.path.startswith("/api/") else abort(403)
         return fn(*a, **k)
     return w
 
@@ -404,6 +448,33 @@ def require_admin(fn):
         if u["role"] != "admin": return _deny(403)
         return fn(*a, **k)
     return w
+
+def has_perm(name):
+    u = current_user()
+    if not u: return False
+    if u["role"] == "admin": return True
+    return bool(u.get("perms", {}).get(name, DEFAULT_PERMS.get(name, False)))
+
+def _net_ok(u):
+    """Enforce a 'private networks only' account limit: block it over the public internet."""
+    if not u or u["role"] == "admin": return True
+    if u.get("limits", {}).get("lan_only") and classify_ip(client_ip()) == "public":
+        return False
+    return True
+
+def require_perm(perm):
+    def deco(fn):
+        @wraps(fn)
+        def w(*a, **k):
+            u = current_user()
+            if u is None: return _deny(401)
+            if not _net_ok(u):
+                return (jsonify(error="your account is not allowed from the public internet"), 403) if request.path.startswith("/api/") else abort(403)
+            if u["role"] != "admin" and not has_perm(perm):
+                return (jsonify(error=f"your account is not allowed to {perm.replace('_',' ')}"), 403) if request.path.startswith("/api/") else abort(403)
+            return fn(*a, **k)
+        return w
+    return deco
 
 @app.before_request
 def _csrf_guard():
@@ -461,7 +532,9 @@ def login():
             name = (request.form.get("username") or "").strip().lower()
             pw   = request.form.get("password") or ""
             acct = check_password(name, pw) if name and pw else None
-            if acct:
+            if acct and account_expired(acct["name"]):
+                error = "This account has expired."
+            elif acct:
                 login_succeeded(ip)
                 session.clear()
                 session.permanent = True
@@ -520,9 +593,17 @@ def api_state():
         purge_expired(conn)
         touch_device(conn)
 
+        see_all = admin or user.get("perms", {}).get("see_all", True)
+        uname = user["name"]
+        def _owns(r):
+            try: ou = r["owner_user"]
+            except (KeyError, IndexError): ou = None
+            if ou: return ou == uname            # account-based ownership when known
+            return r["owner_ip"] == me           # legacy items: fall back to device IP
         items = []
         for r in conn.execute("SELECT * FROM files ORDER BY pinned DESC, created DESC").fetchall():
             if not visible(r, me): continue
+            if not see_all and not _owns(r): continue
             mime = r["mime"] or ""
             mine = r["owner_ip"] == me
             items.append({"kind":"file","id":r["id"],"name":r["name"],"size":r["size"],"mime":mime,
@@ -530,18 +611,19 @@ def api_state():
                           "pinned":bool(r["pinned"]), "label":r["label"] or "",
                           "preview":preview_kind(mime, r["name"]),
                           "target":r["target_ip"] or "", "mine_target":bool(r["target_ip"]) and r["target_ip"]==me,
-                          "mine":mine, "can_delete":admin or mine,
+                          "mine":mine, "can_delete":admin or (mine and user.get("perms",{}).get("delete",True)),
                           "share_url":url_for("shared", token=r["token"], _external=False) if r["token"] else "",
                           "raw_url":url_for("file_raw", item_id=r["id"]),
                           "download_url":url_for("file_download", item_id=r["id"])})
         for r in conn.execute("SELECT * FROM notes ORDER BY pinned DESC, created DESC").fetchall():
             if not visible(r, me): continue
+            if not see_all and not _owns(r): continue
             burn = bool(r["burn"]); mine = r["owner_ip"] == me
             items.append({"kind":"note","id":r["id"],
                           "content": None if burn else r["content"],
                           "burn":burn, "created":r["created"], "pinned":bool(r["pinned"]), "label":r["label"] or "",
                           "target":r["target_ip"] or "", "mine_target":bool(r["target_ip"]) and r["target_ip"]==me,
-                          "mine":mine, "can_delete":admin or mine})
+                          "mine":mine, "can_delete":admin or (mine and user.get("perms",{}).get("delete",True))})
         items.sort(key=lambda x: (not x["pinned"], -x["created"]))
 
         devices = []
@@ -569,6 +651,7 @@ def api_state():
     return jsonify(items=items, devices=devices, activity=activity, chat=chat,
                    me=me, remote=is_remote(me), stats=stats,
                    user=user["name"], role=user["role"], admin=admin, auth=auth_enabled(),
+                   perms=user.get("perms", {}), limits=user.get("limits", {}),
                    ask_location=bool(access_cfg().get("enabled") and access_cfg().get("client_details") and access_cfg().get("precise_location")),
                    experimental=(access_cfg().get("experimental", {}) if (access_cfg().get("enabled") and access_cfg().get("client_details")) else {}))
 
@@ -592,7 +675,7 @@ def api_events():
                     headers={"Cache-Control":"no-cache", "X-Accel-Buffering":"no"})
 
 # --------------------------------------------------------------------------- create
-def _store_file(conn, filename, stream_or_bytes, mime, owner, target):
+def _store_file(conn, filename, stream_or_bytes, mime, owner, target, owner_user=""):
     ext = os.path.splitext(filename)[1][:12]
     stored = uuid.uuid4().hex + ext
     path = os.path.join(FILES_DIR, stored)
@@ -602,27 +685,43 @@ def _store_file(conn, filename, stream_or_bytes, mime, owner, target):
         stream_or_bytes.save(path)
     size = os.path.getsize(path)
     mime = mime or mimetypes.guess_type(filename)[0] or "application/octet-stream"
-    conn.execute("""INSERT INTO files (id,name,stored,size,mime,created,pinned,token,owner_ip,target_ip,expires)
-                    VALUES (?,?,?,?,?,?,0,?,?,?,NULL)""",
+    conn.execute("""INSERT INTO files (id,name,stored,size,mime,created,pinned,token,owner_ip,target_ip,expires,owner_user)
+                    VALUES (?,?,?,?,?,?,0,?,?,?,NULL,?)""",
                  (uuid.uuid4().hex, filename, stored, size, mime, time.time(),
-                  uuid.uuid4().hex[:16], owner, target or None))
+                  uuid.uuid4().hex[:16], owner, target or None, owner_user or ""))
     return size
 
 @app.route("/api/upload", methods=["POST"])
-@require_auth
+@require_perm("upload")
 def api_upload():
     files = request.files.getlist("files")
     if not files:
         return jsonify(error="No files received."), 400
-    ip = client_ip()
+    ip = client_ip(); u = current_user(); uname = u["name"]; lim = u.get("limits", {})
+    cap_mb = lim.get("max_upload_mb") or 0
+    quota_mb = lim.get("quota_mb") or 0
+    max_items = lim.get("max_items") or 0
     target = (request.form.get("target") or "").strip()
     saved = 0
     with db() as conn:
         who = touch_device(conn)
         tgt_name = display_name(conn, target) if target else ""
+        if uname and (quota_mb or max_items):
+            row = conn.execute("SELECT COALESCE(SUM(size),0) s, COUNT(*) c FROM files WHERE owner_user=?", (uname,)).fetchone()
+            used, cnt = row["s"], row["c"]
+        else:
+            used = cnt = 0
         for f in files:
             if not f or not f.filename: continue
-            _store_file(conn, f.filename, f, f.mimetype, ip, target)
+            f.stream.seek(0, 2); fsize = f.stream.tell(); f.stream.seek(0)
+            if cap_mb and fsize > cap_mb * 1024 * 1024:
+                return jsonify(error=f"{f.filename} is over your {cap_mb} MB per-file limit", saved=saved), 413
+            if max_items and cnt + 1 > max_items:
+                return jsonify(error=f"you have reached your {max_items}-item limit", saved=saved), 413
+            if quota_mb and used + fsize > quota_mb * 1024 * 1024:
+                return jsonify(error=f"this would exceed your {quota_mb} MB storage quota", saved=saved), 413
+            _store_file(conn, f.filename, f, f.mimetype, ip, target, uname)
+            used += fsize; cnt += 1
             label = f"{who} shared {f.filename}" + (f" → {tgt_name}" if target else "")
             log_activity(conn, "up", label, ip)
             saved += 1
@@ -630,7 +729,7 @@ def api_upload():
     return jsonify(saved=saved)
 
 @app.route("/api/note", methods=["POST"])
-@require_auth
+@require_perm("notes")
 def api_note():
     d = request.json if request.is_json else request.form
     content = (d.get("content") or "").strip()
@@ -641,10 +740,10 @@ def api_note():
     ip = client_ip()
     with db() as conn:
         who = touch_device(conn)
-        conn.execute("""INSERT INTO notes (id,content,created,pinned,owner_ip,target_ip,expires,burn)
-                        VALUES (?,?,?,0,?,?,?,?)""",
+        conn.execute("""INSERT INTO notes (id,content,created,pinned,owner_ip,target_ip,expires,burn,owner_user)
+                        VALUES (?,?,?,0,?,?,?,?,?)""",
                      (uuid.uuid4().hex, content, time.time(), ip, target or None,
-                      (time.time()+hours*3600) if hours>0 else None, 1 if burn else 0))
+                      (time.time()+hours*3600) if hours>0 else None, 1 if burn else 0, current_user()["name"]))
         label = f"{who} shared " + ("a secret note" if burn else "text")
         if target: label += f" → {display_name(conn, target)}"
         log_activity(conn, "link", label, ip)
@@ -652,7 +751,7 @@ def api_note():
     return jsonify(ok=True)
 
 @app.route("/api/fetch-url", methods=["POST"])
-@require_admin          # the server fetches arbitrary URLs from inside your network: admin only
+@require_perm("fetch_url")   # the server fetches arbitrary URLs from inside your network
 def api_fetch_url():
     d = request.json if request.is_json else request.form
     url = (d.get("url") or "").strip()
@@ -676,13 +775,13 @@ def api_fetch_url():
         return jsonify(error=f"Fetch failed: {e.__class__.__name__}"), 502
     with db() as conn:
         who = touch_device(conn)
-        _store_file(conn, name, data, mime, ip, None)
+        _store_file(conn, name, data, mime, ip, None, current_user()["name"])
         log_activity(conn, "down", f"{who} pulled {name} from the web", ip)
     bump()
     return jsonify(ok=True, name=name)
 
 @app.route("/api/chat", methods=["POST"])
-@require_auth
+@require_perm("chat")
 def api_chat():
     d = request.json if request.is_json else request.form
     text = (d.get("text") or "").strip()
@@ -723,8 +822,13 @@ def api_reveal(item_id):
     return jsonify(content=content)
 
 def _may_delete(row, me):
-    """Admins delete anything; users only what they shared themselves."""
-    return is_admin() or (row is not None and row["owner_ip"] == me)
+    """Admins delete anything; users only what they shared themselves (by device IP or account)."""
+    if is_admin() or row is None: return is_admin()
+    if not has_perm("delete"): return False
+    uname = (current_user() or {}).get("name")
+    try: own_user = row["owner_user"]
+    except (KeyError, IndexError): own_user = None
+    return row["owner_ip"] == me or (uname and own_user == uname)
 
 @app.route("/api/item/<kind>/<item_id>", methods=["DELETE"])
 @require_auth
@@ -777,7 +881,7 @@ def api_bulk_delete():
     return jsonify(deleted=n, skipped=skipped)
 
 @app.route("/api/zip")
-@require_auth
+@require_perm("download")
 def api_zip():
     ids = [x for x in (request.args.get("ids") or "").split(",") if x]
     if not ids: abort(400)
@@ -817,7 +921,7 @@ def api_device_name():
     return jsonify(ok=True)
 
 @app.route("/api/preview-text/<item_id>")
-@require_auth
+@require_perm("download")
 def api_preview_text(item_id):
     me = client_ip()
     with db() as conn:
@@ -926,24 +1030,39 @@ def api_admin_overview():
         users.append({"name": "user", "role": "user", "updated": 0, "legacy_pin": True})
     with db() as conn:
         storage = storage_overview(conn)
-    return jsonify(me=current_user()["name"], users=users, storage=storage,
-                   roots=load_settings()["library_roots"])
+    rich = []
+    for row in users:
+        rec = load_users().get(row["name"], {})
+        row = dict(row)
+        row["perms"] = effective_perms(rec)
+        row["limits"] = dict(rec.get("limits") or {})
+        row["expires"] = rec.get("expires")
+        rich.append(row)
+    return jsonify(me=current_user()["name"], users=rich, storage=storage,
+                   roots=load_settings()["library_roots"], perm_keys=list(PERM_KEYS), limit_keys=list(LIMIT_KEYS))
 
 @app.route("/api/admin/users", methods=["POST"])
 @require_admin
 def api_admin_user_set():
     d = request.json or {}
     name = (d.get("name") or "").strip().lower(); role = d.get("role") or None; pw = d.get("password") or ""
+    perms = d.get("perms"); limits = d.get("limits")
+    expires = d.get("expires", "KEEP")
+    exp_val = None if expires in (None, "", 0) else (float(expires) if expires != "KEEP" else "KEEP")
     users = load_users()
     try:
+        if name == current_user()["name"] and role and role != "admin":
+            return jsonify(error="you can't demote yourself"), 400
         if pw:
             role = set_password(name, pw, role)
-        elif name in users and role in ROLES:
-            if name == current_user()["name"] and role != "admin":
-                return jsonify(error="you can't demote yourself"), 400
-            users[name]["role"] = role; save_users(users)
-        else:
+        elif name not in users:
             return jsonify(error="a password is required for a new account"), 400
+        # apply role/perms/limits/expiry on top (works for new and existing accounts)
+        update_account(name, role=role if role in ROLES else None,
+                       perms=perms if isinstance(perms, dict) else None,
+                       limits=limits if isinstance(limits, dict) else None,
+                       expires=(_UNSET if exp_val == "KEEP" else exp_val))
+        role = load_users()[name].get("role")
     except ValueError as e:
         return jsonify(error=str(e)), 400
     with db() as conn:
@@ -1131,7 +1250,7 @@ def api_fm_share():
     with db() as conn:
         who = touch_device(conn)
         with open(src, "rb") as f:
-            _store_file(conn, name, f.read(), mimetypes.guess_type(name)[0], ip, None)
+            _store_file(conn, name, f.read(), mimetypes.guess_type(name)[0], ip, None, current_user()["name"])
         log_activity(conn, "up", f"{who} shared {name} from library '{d.get('root')}'", ip)
     bump()
     return jsonify(ok=True)
@@ -1440,14 +1559,14 @@ def _start_websockify():
     threading.Thread(target=run, daemon=True, name="websockify").start()
 
 @app.route("/api/screen-status")
-@require_admin
+@require_perm("screen")
 def api_screen_status():
     return jsonify(vnc=_port_open("127.0.0.1", VNC_PORT),
                    bridge=_ws_state["running"] and _port_open("127.0.0.1", WS_PORT),
                    ws_port=WS_PUBLIC_PORT if request.is_secure else WS_PORT, error=_ws_state["error"])
 
 @app.route("/screen")
-@require_admin
+@require_perm("screen")
 def screen():
     resp = make_response(send_file(os.path.join(HERE, "templates", "screen.html")))
     # cookies are shared across ports on the same host, so the bridge on WS_PORT receives this too
@@ -1473,12 +1592,12 @@ def _serve(row, as_attachment=False):
     return resp
 
 @app.route("/file/<item_id>")
-@require_auth
+@require_perm("download")
 def file_raw(item_id):
     return _serve(_lookup(item_id))
 
 @app.route("/file/<item_id>/download")
-@require_auth
+@require_perm("download")
 def file_download(item_id):
     return _serve(_lookup(item_id), as_attachment=True)
 
