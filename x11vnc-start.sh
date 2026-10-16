@@ -4,6 +4,9 @@
 # so we read them straight from the running gnome-shell / desktop process instead of guessing.
 set -u
 USER_NAME="${SUDO_USER:-saibala}"
+# Optional overrides without sudo, e.g.:  echo X11VNC_SCALE=0.75 > ~/.config/dropzone-screen.env ; then: kill $(pgrep -x x11vnc)
+CONF="/home/$USER_NAME/.config/dropzone-screen.env"
+[ -r "$CONF" ] && . "$CONF"
 
 for _ in $(seq 1 60); do
     PID="$(pgrep -u "$USER_NAME" -x gnome-shell | head -1)"
