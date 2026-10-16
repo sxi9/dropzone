@@ -5,6 +5,8 @@ After=display-manager.service
 
 [Service]
 User=saibala
+# Optional: send a downscaled screen (0.5 - 1.0). Big speed-up on slow links, slightly softer picture.
+#Environment=X11VNC_SCALE=0.75
 ExecStart=/home/saibala/Downloads/dropzone/x11vnc-start.sh
 Restart=always
 RestartSec=5

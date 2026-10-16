@@ -17,6 +17,7 @@
   #bar .st{font-size:12px;color:var(--soft);padding-right:4px}
   #bar button,#bar a{border:1px solid var(--line);background:transparent;color:var(--ink);font-size:12.5px;padding:7px 12px;border-radius:999px;cursor:pointer;text-decoration:none;line-height:1}
   #bar button:hover,#bar a:hover{border-color:var(--signal);color:var(--signal)}
+  #bar button.on{border-color:var(--signal);color:var(--signal);background:rgba(42,214,195,.12)}
   #screen{position:fixed;inset:0}
   #msg{position:fixed;inset:0;display:grid;place-items:center;text-align:center;padding:24px;z-index:10}
   #msg[hidden]{display:none}
@@ -38,6 +39,10 @@
   <b>Screen</b>
   <span class="st" id="st">connecting…</span>
   <button id="keys" title="Send Ctrl+Alt+Del">Ctrl·Alt·Del</button>
+  <span class="st" style="padding-left:6px">Quality</span>
+  <button id="qFast" title="Lowest bandwidth, fastest (JPEG quality 1, max compression)">Fast</button>
+  <button id="qBal" title="Default balance">Balanced</button>
+  <button id="qSharp" title="Sharpest text, most bandwidth">Sharp</button>
   <button id="fs">Fullscreen</button>
   <a href="/">Back to Dropzone</a>
 </div>
@@ -77,6 +82,7 @@ x11vnc -display :0 -localhost -forever -shared -nopw -bg</pre>
     rfb = sock;
     sock.scaleViewport = true;
     sock.resizeSession = false;
+    applyQuality(sock, currentQuality());
     sock.addEventListener("connect", ()=>{
       if(sock !== rfb) return;                 // a newer attempt superseded this one
       connected = true; st.textContent = "live"; dot.classList.add("on"); msg.hidden = true; fadeBarSoon();
@@ -89,6 +95,18 @@ x11vnc -display :0 -localhost -forever -shared -nopw -bg</pre>
       scheduleReconnect();                     // transient blip: retry quietly, don't cover the screen
     });
   }
+
+  // quality presets: [qualityLevel 0-9 (JPEG), compressionLevel 0-9 (zlib)]
+  const QUALITY = { fast:[1,9], balanced:[6,2], sharp:[9,0] };
+  const QBTN = { fast:"qFast", balanced:"qBal", sharp:"qSharp" };
+  function currentQuality(){ let q="balanced"; try{ q=localStorage.getItem("dz-screen-quality")||q; }catch(e){} return QUALITY[q]?q:"balanced"; }
+  function applyQuality(sock, name){
+    const [ql, cl] = QUALITY[name]; sock.qualityLevel = ql; sock.compressionLevel = cl;
+    Object.entries(QBTN).forEach(([k,id])=>document.getElementById(id).classList.toggle("on", k===name));
+  }
+  function setQuality(name){ try{ localStorage.setItem("dz-screen-quality", name); }catch(e){} if(rfb) applyQuality(rfb, name); st.textContent = "quality: "+name; setTimeout(()=>{ if(connected) st.textContent="live"; }, 1500); }
+  Object.entries(QBTN).forEach(([k,id])=>document.getElementById(id).onclick = ()=>setQuality(k));
+  Object.entries(QBTN).forEach(([k,id])=>document.getElementById(id).classList.toggle("on", k===currentQuality()));
 
   function scheduleReconnect(){
     clearTimeout(reconnectTimer);
