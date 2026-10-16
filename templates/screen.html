@@ -39,6 +39,9 @@
   <b>Screen</b>
   <span class="st" id="st">connecting…</span>
   <button id="keys" title="Send Ctrl+Alt+Del">Ctrl·Alt·Del</button>
+  <button id="paste" title="Send your PC clipboard to the remote screen, then press Ctrl+V there">Paste to screen</button>
+  <button id="copyr" title="Copy the remote clipboard to your PC">Copy from screen</button>
+  <button id="pin" title="Keep this bar always visible / let it auto-hide">Pin bar</button>
   <span class="st" style="padding-left:6px">Quality</span>
   <button id="qFast" title="Lowest bandwidth, fastest (JPEG quality 1, max compression)">Fast</button>
   <button id="qBal" title="Default balance">Balanced</button>
@@ -64,9 +67,11 @@ x11vnc -display :0 -localhost -forever -shared -nopw -bg</pre>
 
   const st = document.getElementById("st"), dot = document.getElementById("dot");
   const msg = document.getElementById("msg"), bar = document.getElementById("bar");
-  let rfb = null, fadeTimer = null, connected = false, reconnectTimer = null, manualStop = false;
+  let rfb = null, fadeTimer = null, connected = false, reconnectTimer = null, manualStop = false, remoteClip = "";
 
-  function fadeBarSoon(){ clearTimeout(fadeTimer); bar.classList.remove("faded"); fadeTimer = setTimeout(()=>bar.classList.add("faded"), 2500); }
+  let barPinned = false; try{ barPinned = localStorage.getItem("dz-screen-pinbar")==="1"; }catch(e){}
+  function fadeBarSoon(){ clearTimeout(fadeTimer); bar.classList.remove("faded"); if(!barPinned) fadeTimer = setTimeout(()=>bar.classList.add("faded"), 2500); }
+  function applyPin(){ const b=document.getElementById("pin"); b.classList.toggle("on", barPinned); b.textContent = barPinned?"Unpin bar":"Pin bar"; if(barPinned){ clearTimeout(fadeTimer); bar.classList.remove("faded"); } else { fadeBarSoon(); } }
   document.addEventListener("mousemove", fadeBarSoon);
   document.addEventListener("touchstart", fadeBarSoon);
 
@@ -86,6 +91,10 @@ x11vnc -display :0 -localhost -forever -shared -nopw -bg</pre>
     sock.addEventListener("connect", ()=>{
       if(sock !== rfb) return;                 // a newer attempt superseded this one
       connected = true; st.textContent = "live"; dot.classList.add("on"); msg.hidden = true; fadeBarSoon();
+    });
+    sock.addEventListener("clipboard", (e)=>{   // remote copied something -> mirror into your PC clipboard
+      remoteClip = (e.detail && e.detail.text) || "";
+      if(remoteClip){ try{ navigator.clipboard.writeText(remoteClip); }catch(_){} }
     });
     sock.addEventListener("disconnect", ()=>{
       if(sock !== rfb) return;                 // ignore a stale socket closing under a live one
@@ -135,7 +144,20 @@ x11vnc -display :0 -localhost -forever -shared -nopw -bg</pre>
   document.getElementById("retry").onclick = ()=>{ manualStop=false; connected=false; if(rfb){ try{rfb.disconnect();}catch(e){} rfb=null; } msg.hidden=true; boot(); };
   document.getElementById("fs").onclick = ()=>{ const el=document.documentElement; if(document.fullscreenElement) document.exitFullscreen(); else el.requestFullscreen && el.requestFullscreen(); };
   document.getElementById("keys").onclick = ()=>{ if(rfb) rfb.sendCtrlAltDel(); };
+  document.getElementById("pin").onclick = ()=>{ barPinned = !barPinned; try{ localStorage.setItem("dz-screen-pinbar", barPinned?"1":"0"); }catch(e){} applyPin(); };
+  document.getElementById("paste").onclick = async ()=>{
+    if(!rfb || !connected){ st.textContent="not connected"; return; }
+    try{ const t = await navigator.clipboard.readText(); if(t){ rfb.clipboardPasteFrom(t); st.textContent="clipboard sent — press Ctrl+V on the screen"; setTimeout(()=>{ if(connected) st.textContent="live"; },2500); } }
+    catch(e){ const t = prompt("Paste couldn't read your clipboard. Paste the text here to send it to the screen:"); if(t){ rfb.clipboardPasteFrom(t); } }
+  };
+  document.getElementById("copyr").onclick = async ()=>{
+    if(!remoteClip){ st.textContent="nothing copied on the screen yet"; setTimeout(()=>{ if(connected) st.textContent="live"; },2000); return; }
+    try{ await navigator.clipboard.writeText(remoteClip); st.textContent="copied from screen"; }
+    catch(e){ prompt("Copy this (the screen's clipboard):", remoteClip); }
+    setTimeout(()=>{ if(connected) st.textContent="live"; },2000);
+  };
 
+  applyPin();
   boot();
 </script>
 </body>
