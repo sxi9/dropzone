@@ -76,6 +76,7 @@ PUBLIC_SHARE  = _flag("DROPZONE_PUBLIC_SHARE")
 
 FILES_DIR   = os.path.join(DATA_DIR, "files")
 CAPTURES_DIR = os.path.join(DATA_DIR, "captures")
+CHUNK_DIR    = os.path.join(DATA_DIR, "chunks")
 DB_PATH     = os.path.join(DATA_DIR, "dropzone.db")
 SECRET_PATH = os.path.join(DATA_DIR, "secret.key")
 USERS_PATH  = os.path.join(DATA_DIR, "users.json")
@@ -98,6 +99,7 @@ CLI_COMMANDS       = ("set-password", "users", "remove-user")
 
 os.makedirs(FILES_DIR, exist_ok=True)
 os.makedirs(CAPTURES_DIR, exist_ok=True)
+os.makedirs(CHUNK_DIR, exist_ok=True)
 
 app = Flask(__name__, static_folder="static", static_url_path="/static")
 app.config["MAX_CONTENT_LENGTH"] = MAX_MB * 1024 * 1024
@@ -765,6 +767,64 @@ def api_upload():
             saved += 1
     if saved: bump()
     return jsonify(saved=saved)
+
+def _chunk_name(n):
+    n = (n or "file").strip().replace("\\", "/").split("/")[-1]
+    if not n or n in (".", ".."): n = "file"
+    return n[:200]
+
+@app.route("/api/upload-chunk", methods=["GET", "POST"])
+@require_perm("upload")
+def api_upload_chunk():
+    """Resumable upload: the client sends a big file in pieces and can resume after a drop.
+    GET  ?id=  -> how many bytes we already have (so the client knows where to continue).
+    POST ?id=&name=&size=&offset=&target=  with the raw chunk bytes as the body."""
+    uid = re.sub(r"[^a-z0-9]", "", (request.args.get("id") or "").lower())[:48]
+    if not uid: return jsonify(error="bad id"), 400
+    part = os.path.join(CHUNK_DIR, uid + ".part")
+    have = os.path.getsize(part) if os.path.exists(part) else 0
+    if request.method == "GET":
+        return jsonify(received=have)
+    try:
+        total = int(request.args.get("size") or 0); offset = int(request.args.get("offset") or 0)
+    except ValueError:
+        return jsonify(error="bad size/offset"), 400
+    name = _chunk_name(request.args.get("name"))
+    u = current_user(); uname = u["name"]; lim = u.get("limits", {})
+    if offset == 0:
+        cap = (lim.get("max_upload_mb") or 0) * 1024 * 1024
+        if cap and total > cap:
+            return jsonify(error=f"over your {lim['max_upload_mb']} MB per-file limit"), 413
+        if uname and (lim.get("quota_mb") or lim.get("max_items")):
+            with db() as conn:
+                row = conn.execute("SELECT COALESCE(SUM(size),0) s, COUNT(*) c FROM files WHERE owner_user=?", (uname,)).fetchone()
+            if lim.get("max_items") and row["c"] + 1 > lim["max_items"]:
+                return jsonify(error=f"you have reached your {lim['max_items']}-item limit"), 413
+            if lim.get("quota_mb") and row["s"] + total > lim["quota_mb"] * 1024 * 1024:
+                return jsonify(error=f"this would exceed your {lim['quota_mb']} MB storage quota"), 413
+        open(part, "wb").close(); have = 0          # start fresh
+    if offset != have:
+        return jsonify(error="offset mismatch", received=have), 409   # tell the client where to resume
+    data = request.get_data(cache=False, parse_form_data=False)
+    with open(part, "ab") as f:
+        f.write(data)
+    have = os.path.getsize(part)
+    if total and have >= total:
+        ip = client_ip(); target = (request.args.get("target") or "").strip()
+        stored = uuid.uuid4().hex + os.path.splitext(name)[1][:12]
+        os.replace(part, os.path.join(FILES_DIR, stored))
+        mime = mimetypes.guess_type(name)[0] or "application/octet-stream"
+        with db() as conn:
+            who = touch_device(conn)
+            conn.execute("""INSERT INTO files (id,name,stored,size,mime,created,pinned,token,owner_ip,target_ip,expires,owner_user)
+                            VALUES (?,?,?,?,?,?,0,?,?,?,NULL,?)""",
+                         (uuid.uuid4().hex, name, stored, have, mime, time.time(),
+                          uuid.uuid4().hex[:16], ip, target or None, uname or ""))
+            label = f"{who} shared {name}" + (f" → {display_name(conn, target)}" if target else "")
+            log_activity(conn, "up", label, ip)
+        bump()
+        return jsonify(done=True, received=have)
+    return jsonify(received=have)
 
 @app.route("/api/note", methods=["POST"])
 @require_perm("notes")

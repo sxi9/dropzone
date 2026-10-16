@@ -568,31 +568,60 @@ x11vnc -display :0 -localhost \
     return Promise.all(entries.map(e=>walk(e,""))).then(()=>out);
   }
 
-  function startUpload(files){
-    const count=files.length;
-    const title=count===1?files[0].name:count+" files";
-    setState({upload:{active:true, progress:0, title, sub:"Beaming to your devices…", count}});
-    const fd=new FormData();
-    for(const f of files) fd.append("files", f, f.name);
-    if(state.target) fd.append("target", state.target);
-    const uid = (Date.now().toString(36)+Math.random().toString(36).slice(2,8));
-    let lastSent = 0;
-    function reportProgress(pct){
-      const now = Date.now();
-      if(pct < 100 && now - lastSent < 700) return;   // throttle so we don't spam the receivers
-      lastSent = now;
-      post("/api/upload-progress",{id:uid, name:title, count, pct, target:state.target||""}).catch(()=>{});
+  // Uploads: several files at once (parallel), and big files go up in chunks that resume after a dropped connection.
+  const CHUNK_SIZE = 4*1024*1024, BIG_FILE = 8*1024*1024, PARALLEL = 2;
+  async function startUpload(files){
+    const list=[].slice.call(files), count=list.length;
+    const title=count===1?list[0].name:count+" files";
+    const uid=(Date.now().toString(36)+Math.random().toString(36).slice(2,8));
+    const totalBytes=list.reduce((a,f)=>a+(f.size||0),0)||1;
+    let sent=0, lastSent=0;
+    setState({upload:{active:true, progress:0, title, sub:"Uploading…", count}});
+    function report(done){
+      const pct=done?100:Math.min(99,Math.round(sent/totalBytes*100));
+      setState({upload:Object.assign({},state.upload,{progress:pct, sub:pct>=100?"Delivered":"Uploading…"})});
+      const now=Date.now();
+      if(done || now-lastSent>700){ lastSent=now; post("/api/upload-progress",{id:uid,name:title,count,pct,target:state.target||""}).catch(()=>{}); }
     }
-    const xhr=new XMLHttpRequest();
-    xhr.open("POST","/api/upload");
-    xhr.upload.onprogress=e=>{ if(e.lengthComputable){ const p=Math.round(e.loaded/e.total*100); setState({upload:Object.assign({},state.upload,{progress:p, sub:p>=100?"Delivered":"Beaming to your devices…"})}); reportProgress(p); } };
-    xhr.onload=()=>{ setState({upload:Object.assign({},state.upload,{progress:100, sub:"Delivered"})});
-      setTimeout(()=>setState({upload:Object.assign({},state.upload,{active:false})}), 650);
-      reportProgress(100);
-      if(xhr.status<300){ toast(count===1?"Shared "+files[0].name:count+" files shared"); loadState(); }
-      else toast("Upload failed"); };
-    xhr.onerror=()=>{ setState({upload:Object.assign({},state.upload,{active:false})}); toast("Upload failed"); };
-    xhr.send(fd);
+    function uploadSimple(f){
+      return new Promise((res,rej)=>{
+        const fd=new FormData(); fd.append("files",f,f.name); if(state.target) fd.append("target",state.target);
+        const xhr=new XMLHttpRequest(); xhr.open("POST","/api/upload"); let prev=0;
+        xhr.upload.onprogress=e=>{ if(e.lengthComputable){ sent+=e.loaded-prev; prev=e.loaded; report(); } };
+        xhr.onload=()=>{ if(xhr.status<300) res(); else { try{ rej(new Error(JSON.parse(xhr.responseText).error||"upload failed")); }catch(_){ rej(new Error("upload failed")); } } };
+        xhr.onerror=()=>rej(new Error("network error")); xhr.send(fd);
+      });
+    }
+    async function uploadChunked(f){
+      const fid=(uid+Math.random().toString(36).slice(2,8)).replace(/[^a-z0-9]/g,"");
+      let offset=0;
+      try{ const r=await fetch("/api/upload-chunk?id="+fid); const d=await r.json(); offset=d.received||0; sent+=offset; report(); }catch(_){}
+      const qt=state.target?("&target="+encodeURIComponent(state.target)):"";
+      while(offset<f.size){
+        const end=Math.min(offset+CHUNK_SIZE,f.size), blob=f.slice(offset,end);
+        let tries=0;
+        for(;;){
+          try{
+            const url="/api/upload-chunk?id="+fid+"&name="+encodeURIComponent(f.name)+"&size="+f.size+"&offset="+offset+qt;
+            const r=await fetch(url,{method:"POST",body:blob,headers:{"Content-Type":"application/octet-stream"}});
+            const d=await r.json().catch(()=>({}));
+            if(r.status===409){ sent+=(d.received||0)-offset; offset=d.received||0; break; }  // resync to server
+            if(!r.ok) throw new Error(d.error||("chunk "+r.status));
+            sent+=(end-offset); offset=(d.received!=null)?d.received:end; report();
+            break;
+          }catch(e){ if(++tries>=5) throw e; await new Promise(r=>setTimeout(r,700*tries)); }   // retry/resume after a blip
+        }
+      }
+    }
+    const queue=list.slice(); let err=null;
+    async function worker(){ while(queue.length && !err){ const f=queue.shift(); try{ await ((f.size>BIG_FILE)?uploadChunked(f):uploadSimple(f)); }catch(e){ err=e; } } }
+    const workers=[]; for(let i=0;i<Math.min(PARALLEL,list.length);i++) workers.push(worker());
+    await Promise.all(workers);
+    report(true);
+    setState({upload:Object.assign({},state.upload,{progress:100, sub:err?"Some files failed":"Delivered"})});
+    setTimeout(()=>setState({upload:Object.assign({},state.upload,{active:false})}), 800);
+    if(err) toast(err.message||"Some files failed"); else toast(count===1?"Shared "+list[0].name:count+" files shared");
+    loadState();
   }
 
   // paste-to-upload (files or screenshots)
