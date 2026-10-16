@@ -4,10 +4,8 @@ StartLimitIntervalSec=0
 After=display-manager.service
 
 [Service]
-ExecStartPre=/bin/bash -c 'for i in $(seq 1 30); do [ -f /run/user/1000/gdm/Xauthority ] && exit 0; sleep 2; done; exit 0'
 User=saibala
-Environment=DISPLAY=:0
-ExecStart=/usr/bin/x11vnc -display :0 -auth /run/user/1000/gdm/Xauthority -localhost -forever -shared -nopw -quiet -noxdamage
+ExecStart=/home/saibala/Downloads/dropzone/x11vnc-start.sh
 Restart=always
 RestartSec=5
 
