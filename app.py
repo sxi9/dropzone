@@ -1319,7 +1319,13 @@ def api_admin_access():
                 except Exception:
                     pass
     for v in visitors: v["geo"] = geo.get(v["ip"]); v["precise"] = precise.get(v["ip"])
-    return jsonify(settings=access_cfg(), rows=rows, visitors=visitors, total=total)
+    with db() as conn:
+        captures = [{"id": json.loads(r["client"]).get("capture"), "kind": json.loads(r["client"]).get("kind"),
+                     "ip": r["ip"], "user": r["user"], "ts": r["ts"]}
+                    for r in conn.execute("SELECT ip,user,ts,client FROM access_log WHERE method='CAPTURE' ORDER BY ts DESC LIMIT 60").fetchall()
+                    if r["client"]]
+        captures = [c for c in captures if c["id"]]
+    return jsonify(settings=access_cfg(), rows=rows, visitors=visitors, total=total, captures=captures)
 
 @app.route("/api/admin/access/settings", methods=["POST"])
 @require_admin
