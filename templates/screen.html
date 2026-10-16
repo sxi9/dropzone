@@ -54,7 +54,7 @@ x11vnc -display :0 -localhost -forever -shared -nopw -bg</pre>
 
   const st = document.getElementById("st"), dot = document.getElementById("dot");
   const msg = document.getElementById("msg"), bar = document.getElementById("bar");
-  let rfb = null, fadeTimer = null;
+  let rfb = null, fadeTimer = null, connected = false, reconnectTimer = null, manualStop = false;
 
   function fadeBarSoon(){ clearTimeout(fadeTimer); bar.classList.remove("faded"); fadeTimer = setTimeout(()=>bar.classList.add("faded"), 2500); }
   document.addEventListener("mousemove", fadeBarSoon);
@@ -68,14 +68,26 @@ x11vnc -display :0 -localhost -forever -shared -nopw -bg</pre>
   function connect(port){
     const proto = location.protocol === "https:" ? "wss" : "ws";
     const url = proto + "://" + location.hostname + ":" + port;
-    rfb = new RFB(document.getElementById("screen"), url, {});
-    rfb.scaleViewport = true;
-    rfb.resizeSession = false;
-    rfb.addEventListener("connect", ()=>{ st.textContent = "live"; dot.classList.add("on"); msg.hidden = true; fadeBarSoon(); });
-    rfb.addEventListener("disconnect", (e)=>{
-      st.textContent = "disconnected"; dot.classList.remove("on");
-      showSetup(e.detail && e.detail.clean ? "Disconnected" : "Couldn't reach the screen");
+    const sock = new RFB(document.getElementById("screen"), url, {});
+    rfb = sock;
+    sock.scaleViewport = true;
+    sock.resizeSession = false;
+    sock.addEventListener("connect", ()=>{
+      if(sock !== rfb) return;                 // a newer attempt superseded this one
+      connected = true; st.textContent = "live"; dot.classList.add("on"); msg.hidden = true; fadeBarSoon();
     });
+    sock.addEventListener("disconnect", ()=>{
+      if(sock !== rfb) return;                 // ignore a stale socket closing under a live one
+      connected = false; dot.classList.remove("on");
+      if(manualStop) return;
+      st.textContent = "reconnecting…";
+      scheduleReconnect();                     // transient blip: retry quietly, don't cover the screen
+    });
+  }
+
+  function scheduleReconnect(){
+    clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(boot, 2500);
   }
 
   function showSetup(title){
@@ -84,15 +96,18 @@ x11vnc -display :0 -localhost -forever -shared -nopw -bg</pre>
   }
 
   async function boot(){
-    st.textContent = "checking…";
+    if(!connected) st.textContent = "checking…";
     const s = await status();
-    if(!s.vnc){ st.textContent = "not running"; showSetup("Screen sharing isn't running yet"); return; }
-    if(!s.bridge){ st.textContent = "bridge down"; showSetup("The bridge isn't running — restart Dropzone (pip install websockify)"); return; }
+    if(!s.vnc || !s.bridge){
+      if(!connected){ st.textContent = s.vnc ? "bridge down" : "not running"; showSetup(s.vnc ? "The bridge isn't running — restart Dropzone" : "Screen sharing isn't running yet"); }
+      scheduleReconnect();                     // keep trying so it heals itself when the laptop is ready
+      return;
+    }
     msg.hidden = true;
-    connect(s.ws_port);
+    if(!connected) connect(s.ws_port);
   }
 
-  document.getElementById("retry").onclick = ()=>{ if(rfb){ try{rfb.disconnect();}catch(e){} rfb=null; } boot(); };
+  document.getElementById("retry").onclick = ()=>{ manualStop=false; connected=false; if(rfb){ try{rfb.disconnect();}catch(e){} rfb=null; } msg.hidden=true; boot(); };
   document.getElementById("fs").onclick = ()=>{ const el=document.documentElement; if(document.fullscreenElement) document.exitFullscreen(); else el.requestFullscreen && el.requestFullscreen(); };
   document.getElementById("keys").onclick = ()=>{ if(rfb) rfb.sendCtrlAltDel(); };
 
