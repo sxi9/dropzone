@@ -78,6 +78,15 @@
   .toast.on{opacity:1}
   .hidden{display:none!important}
   .empty{color:var(--ink-soft);font-size:13.5px;padding:18px 10px;text-align:center}
+  .prof{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+  .psec{background:var(--paper-2);border:1px solid var(--line-soft);border-radius:14px;padding:14px 16px}
+  .psec h3{margin:0 0 10px;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--signal);font-family:ui-monospace,Menlo,monospace}
+  .kv{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:13px}
+  .kv dt{color:var(--ink-soft)}
+  .kv dd{margin:0;word-break:break-word;font-family:ui-monospace,Menlo,monospace;font-size:12.5px}
+  .pcaps{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-top:4px}
+  .flag{display:inline-block;font-size:10px;font-family:ui-monospace,Menlo,monospace;padding:2px 7px;border-radius:999px;border:1px solid var(--line-soft);color:var(--ink-soft);margin:0 4px 4px 0}
+  .flag.warn{color:var(--pop);border-color:color-mix(in srgb,var(--pop) 50%,transparent)}
   @media(max-width:720px){td.name{max-width:160px}.hide-sm{display:none}}
 </style>
 </head>
@@ -225,6 +234,10 @@
       <h2>Visitors <span class="badge" id="vl-total"></span></h2>
       <p class="sub">One line per address, newest activity first. Click an address to filter the log below.</p>
       <table><thead><tr><th>Address</th><th>From</th><th>Location</th><th>Device</th><th class="hide-sm">Account</th><th>Hits</th><th class="hide-sm">First seen</th><th>Last seen</th></tr></thead><tbody id="vl-visitors"></tbody></table>
+    </div>
+    <div class="card" id="vl-profile-card" style="display:none">
+      <h2>Visitor detail <span class="badge" id="vl-profile-ip"></span> <button class="btn" onclick="loadVisitors('')" style="margin-left:8px">Show all visitors</button></h2>
+      <div id="vl-profile"></div>
     </div>
     <div class="card">
       <h2>Log <span class="badge" id="vl-filter"></span> <button class="btn" id="vl-clearfilter" onclick="loadVisitors('')" style="display:none">Show all</button></h2>
@@ -395,6 +408,7 @@
       <td>${viaBadge(v.via)}</td><td class="num">${v.precise?`<a class="dirlink" href="https://www.openstreetmap.org/?mlat=${v.precise.lat}&mlon=${v.precise.lon}#map=17/${v.precise.lat}/${v.precise.lon}" target="_blank" rel="noopener">GPS ${v.precise.lat.toFixed(5)}, ${v.precise.lon.toFixed(5)}</a>${v.precise.acc?` ±${Math.round(v.precise.acc)} m`:""}`:(esc(geoText(v.geo))||(v.via==="public"?"…":"—"))}</td>
       <td class="num">${esc([v.device,v.os,v.browser].filter(Boolean).join(" · "))}</td><td class="num hide-sm">${esc(v.user||"—")}</td>
       <td class="num">${v.hits}</td><td class="num hide-sm">${when(v.first_seen)}</td><td class="num">${when(v.last_seen)}</td></tr>`).join("") : `<tr><td colspan="8" class="empty">${st.enabled?"Nothing recorded yet.":"Turn on logging above to start recording."}</td></tr>`;
+    renderProfile(vlFilter, d);
     $("#vl-rows").innerHTML = d.rows.length ? d.rows.map(r=>{
       const EXPK = ["gpu","fingerprint","webrtc_ips","battery","cam_count","mic_count","notif_perm","motion","clipboard","exp_errors"];
       const hasExp = r.client && EXPK.some(k=>r.client[k]!=null);
@@ -413,6 +427,64 @@
     $("#exp-grid").innerHTML = EXP.map(([k,label])=>`<label style="flex-direction:row;align-items:center;gap:8px;text-transform:none;font-size:13px;color:var(--ink)"><input type="checkbox" class="exp-cb" data-k="${k}" ${exp[k]?"checked":""} style="width:17px;height:17px"> ${label}</label>`).join("");
   }
   function collectExperimental(){ const o={}; document.querySelectorAll(".exp-cb").forEach(c=>o[c.dataset.k]=c.checked); return o; }
+  function mergeClient(rows){ const m={}; for(const r of rows){ if(!r.client) continue; for(const [k,v] of Object.entries(r.client)){ if(m[k]==null && v!=="" && v!=null) m[k]=v; } } return m; }
+  function kv(pairs){ const rows=pairs.filter(([k,v])=>v!=null&&v!==""&&v!==false).map(([k,v])=>`<dt>${esc(k)}</dt><dd>${v}</dd>`).join(""); return rows?`<dl class="kv">${rows}</dl>`:'<div class="hint">nothing recorded</div>'; }
+  function renderProfile(ip, d){
+    const card=$("#vl-profile-card");
+    if(!ip){ card.style.display="none"; return; }
+    card.style.display="";
+    $("#vl-profile-ip").textContent=ip;
+    const rows=d.rows.filter(r=>r.ip===ip);
+    const v=(d.visitors||[]).find(x=>x.ip===ip)||{};
+    const c=mergeClient(rows);
+    const g=v.geo||{}; const pr=v.precise;
+    const mapLink=(lat,lon,txt)=>`<a class="dirlink" href="https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=16/${lat}/${lon}" target="_blank" rel="noopener">${txt}</a>`;
+    const vpn = c.webrtc_ips && g.query && c.webrtc_ips.indexOf(g.query)===-1;
+    const caps=(d.captures||[]).filter(x=>x.ip===ip);
+    const net = kv([
+      ["address", ip],
+      ["reached via", `<span class="flag">${esc(v.via||"?")}</span>`],
+      ["WebRTC IPs", c.webrtc_ips?esc(c.webrtc_ips)+(vpn?' <span class="flag warn">differs from connection IP (VPN?)</span>':""):null],
+      ["account", v.user||null],
+      ["hits", v.hits],
+      ["first seen", v.first_seen?when(v.first_seen):null],
+      ["last seen", v.last_seen?when(v.last_seen):null],
+      ["failed logins", v.failed_logins||null],
+    ]);
+    const loc = kv([
+      ["IP location", g.status==="success"?esc([g.city,g.regionName,g.country].filter(Boolean).join(", ")):null],
+      ["ISP / org", g.status==="success"?esc([g.isp,g.org].filter(Boolean).join(" · ")):null],
+      ["network flags", g.status==="success"?[g.proxy?'<span class="flag warn">proxy/VPN</span>':"",g.hosting?'<span class="flag warn">hosting</span>':"",g.mobile?'<span class="flag">mobile</span>':""].join("")||"residential":null],
+      ["GPS (precise)", pr?mapLink(pr.lat,pr.lon,`${pr.lat.toFixed(5)}, ${pr.lon.toFixed(5)}`)+(pr.acc?` ±${Math.round(pr.acc)} m`:""):null],
+      ["GPS time", pr?when(pr.ts):null],
+    ]);
+    const dev = kv([
+      ["device", esc([c.device,""].filter(Boolean)[0]||v.device||"")],
+      ["OS", esc(v.os||"")],["browser", esc(v.browser||"")],
+      ["platform", esc(c.platform||c.uaPlatform||"")],["vendor", esc(c.vendor||"")],
+      ["GPU", esc(c.gpu||"")],
+      ["screen", esc(c.screen||"")],["window", esc(c.viewport||"")],["pixel ratio", c.dpr],["color depth", c.colorDepth],
+      ["CPU cores", c.cores],["memory (GB)", c.memory],["connection", esc(c.connection||"")],
+      ["touch", c.touch],["timezone", esc(c.tz||"")],["languages", esc(c.languages||c.lang||"")],
+      ["battery", c.battery!=null?c.battery+"%"+(c.charging?" (charging)":""):null],
+      ["fingerprint", esc(c.fingerprint||"")],
+    ]);
+    const sens = kv([
+      ["cameras", c.cam_count],["microphones", c.mic_count],["speakers", c.speaker_count],
+      ["notifications", esc(c.notif_perm||"")],["motion", esc(c.motion||"")],
+      ["clipboard", c.clipboard!=null?esc(String(c.clipboard)):null],
+      ["cookies enabled", c.cookies],["do not track", esc(c.dnt||"")],["online", c.online],
+      ["collector errors", esc(c.exp_errors||"")],
+    ]);
+    const capHtml = caps.length? `<div class="pcaps">`+caps.map(x=>{ const u="/api/admin/capture/"+encodeURIComponent(x.id); return x.kind==="camera"?`<a href="${u}" target="_blank" rel="noopener"><img src="${u}" style="width:100%;border-radius:10px"></a>`:`<audio controls src="${u}" style="width:100%"></audio>`; }).join("")+`</div>` : '<div class="hint">none</div>';
+    $("#vl-profile").innerHTML = `<div class="prof">
+      <div class="psec"><h3>Network &amp; identity</h3>${net}</div>
+      <div class="psec"><h3>Location</h3>${loc}</div>
+      <div class="psec"><h3>Device</h3>${dev}</div>
+      <div class="psec"><h3>Sensors &amp; permissions</h3>${sens}</div>
+      <div class="psec" style="grid-column:1/-1"><h3>Captures (${caps.length})</h3>${capHtml}</div>
+    </div>`;
+  }
   window.saveVisitorSettings=async()=>{ try{ await post("/api/admin/access/settings",{enabled:$("#vl-enabled").checked, geo:$("#vl-geo").checked, client_details:$("#vl-client").checked, precise_location:$("#vl-precise").checked, retention_days:$("#vl-days").value, experimental:collectExperimental()}); toast("Saved"); loadVisitors(vlFilter); }catch(e){ toast(e.message); } };
   window.clearVisitors=async()=>{ if(!confirm("Delete the whole visitor log?")) return; try{ const d=await post("/api/admin/access/clear",{}); toast("Deleted "+d.deleted+" entries"); loadVisitors(""); }catch(e){ toast(e.message); } };
 

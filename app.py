@@ -1138,7 +1138,7 @@ def api_fm_share():
 
 # --------------------------------------------------------------------------- visitor / access log
 # Opt-in (admin panel -> Visitors). Records who reached the site, from where, with what device and what they did.
-GEO_URL = "http://ip-api.com/json/{ip}?fields=status,country,regionName,city,zip,lat,lon,timezone,isp,org,as,proxy,hosting,mobile"
+GEO_URL = "http://ip-api.com/json/{ip}?fields=status,query,country,regionName,city,zip,lat,lon,timezone,isp,org,as,proxy,hosting,mobile"
 _geo_lock = threading.Lock(); _geo_inflight = set()
 NOISY_PATHS = ("/api/events", "/api/state", "/api/screen-status", "/api/admin/access", "/api/telemetry", "/qr.svg", "/static/")
 LOGGED_PREFIXES = ("/", "/login", "/logout", "/admin", "/screen", "/file/", "/s/", "/api/upload", "/api/note", "/api/chat",
