@@ -1300,38 +1300,35 @@ def screen_ticket(hours=None):
     sig = hmac.new(app.secret_key, f"screen|{exp}".encode(), hashlib.sha256).hexdigest()
     return f"{exp}.{sig}"
 
-_ws_proc = {"p": None}
-
 def _kill_stale_bridges():
-    """A restart orphans our old websockify child; kill any bridge on our WS_PORT so they never stack up."""
+    """Belt-and-suspenders: kill any bridge left on our WS_PORT by a previous run before we start a new one."""
     import subprocess
     try:
         subprocess.run(["pkill", "-f", f"websockify .*0\\.0\\.0\\.0:{WS_PORT} "], timeout=5)
     except Exception:
         pass
 
-def _stop_websockify():
-    p = _ws_proc.get("p")
-    if p and p.poll() is None:
-        try: p.terminate()
-        except Exception: pass
+def _pdeathsig():
+    """In the forked child, ask the kernel to SIGKILL it the moment this (parent) process dies.
+    This is what guarantees a Dropzone restart never leaves an orphaned bridge behind (Linux only)."""
+    try:
+        import ctypes, signal as _sig
+        ctypes.CDLL("libc.so.6", use_errno=True).prctl(1, _sig.SIGKILL)   # PR_SET_PDEATHSIG = 1
+    except Exception:
+        pass
 
 def _start_websockify():
-    """Run websockify as a child process (it needs the main thread for signals)."""
-    import subprocess, atexit, signal
+    """Run websockify as a child process whose lifetime is bound to ours (it needs the main thread for signals)."""
+    import subprocess
     try:
         import websockify  # noqa: F401 — just checking it's installed
     except ImportError:
         _ws_state["error"] = "websockify not installed (pip install websockify)"
         return
     _kill_stale_bridges()                       # clear any leftover from a previous run first
-    atexit.register(_stop_websockify)
-    try:
-        signal.signal(signal.SIGTERM, lambda *_: (_stop_websockify(), sys.exit(0)))
-    except (ValueError, OSError):
-        pass                                    # not the main thread (e.g. under a WSGI server)
     env = dict(os.environ)
     env["PYTHONPATH"] = HERE + os.pathsep + env.get("PYTHONPATH", "")
+    preexec = _pdeathsig if sys.platform.startswith("linux") else None
     def run():
         while True:
             try:
@@ -1339,8 +1336,8 @@ def _start_websockify():
                     [sys.executable, "-m", "websockify", "--heartbeat", "30",
                      "--auth-plugin", "dropzone_auth.ScreenTicketAuth", "--auth-source", SECRET_PATH,
                      f"0.0.0.0:{WS_PORT}", f"127.0.0.1:{VNC_PORT}"],
-                    cwd=HERE, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                _ws_proc["p"] = p
+                    cwd=HERE, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    preexec_fn=preexec)
                 _ws_state["running"] = True
                 p.wait()
             except Exception as e:
