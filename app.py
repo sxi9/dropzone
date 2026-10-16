@@ -98,7 +98,7 @@ app = Flask(__name__, static_folder="static", static_url_path="/static")
 app.config["MAX_CONTENT_LENGTH"] = MAX_MB * 1024 * 1024
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-app.config["SESSION_COOKIE_SECURE"] = HTTPS
+app.config["SESSION_COOKIE_SECURE"] = False   # works on both the http LAN and the https Funnel address
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(hours=SESSION_HOURS)
 
 if TRUST_PROXY:
@@ -1452,7 +1452,7 @@ def screen():
     resp = make_response(send_file(os.path.join(HERE, "templates", "screen.html")))
     # cookies are shared across ports on the same host, so the bridge on WS_PORT receives this too
     resp.set_cookie("dz_screen", screen_ticket(), max_age=int(SESSION_HOURS*3600),
-                    httponly=True, samesite="Lax", secure=HTTPS, path="/")
+                    httponly=True, samesite="Lax", secure=request.is_secure, path="/")
     return resp
 
 # --------------------------------------------------------------------------- serving
