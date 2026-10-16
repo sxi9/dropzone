@@ -210,6 +210,13 @@
       <p class="hint" style="margin:8px 0 0"><b>Precise GPS location</b> asks each visitor's browser for their exact position. The browser shows them a permission prompt and sends nothing unless they tap Allow. It only works over HTTPS (your <code>…ts.net:8443</code> address), not plain http, and needs browser details enabled.</p>
     </div>
     <div class="card">
+      <h2>Experimental collectors <span class="badge" id="exp-state"></span></h2>
+      <p class="sub">Extra things the browser can report. These need visitor logging + browser details on. The last four prompt the visitor and show a recording indicator; nothing is captured unless they allow it. HTTPS only.</p>
+      <div id="exp-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:8px"></div>
+      <p class="hint" style="margin:12px 0 0">Silent signals (no prompt): WebRTC IP, battery, GPU model, device fingerprint, media-device counts. Prompted: notifications, motion sensors, camera photo, microphone clip, clipboard contents. Use responsibly and only where you are allowed to.</p>
+      <button class="btn go" style="margin-top:12px" onclick="saveVisitorSettings()">Save experimental</button>
+    </div>
+    <div class="card">
       <h2>Visitors <span class="badge" id="vl-total"></span></h2>
       <p class="sub">One line per address, newest activity first. Click an address to filter the log below.</p>
       <table><thead><tr><th>Address</th><th>From</th><th>Location</th><th>Device</th><th class="hide-sm">Account</th><th>Hits</th><th class="hide-sm">First seen</th><th>Last seen</th></tr></thead><tbody id="vl-visitors"></tbody></table>
@@ -371,6 +378,7 @@
     vlFilter=ip||"";
     let d; try{ d=await api("/api/admin/access?limit=300"+(vlFilter?"&ip="+encodeURIComponent(vlFilter):"")); }catch(e){ toast(e.message); return; }
     const st=d.settings; $("#vl-enabled").checked=!!st.enabled; $("#vl-geo").checked=!!st.geo; $("#vl-client").checked=!!st.client_details; $("#vl-precise").checked=!!st.precise_location; $("#vl-days").value=st.retention_days;
+    renderExperimental(st.experimental||{});
     $("#vl-state").textContent=st.enabled?"on":"off"; $("#vl-state").className="badge "+(st.enabled?"ok":"");
     $("#vl-total").textContent=d.total+" entries"; $("#vl-filter").textContent=vlFilter||"all"; $("#vl-clearfilter").style.display=vlFilter?"":"none";
     $("#vl-visitors").innerHTML = d.visitors.length ? d.visitors.map(v=>`<tr>
@@ -380,14 +388,21 @@
       <td class="num">${v.hits}</td><td class="num hide-sm">${when(v.first_seen)}</td><td class="num">${when(v.last_seen)}</td></tr>`).join("") : `<tr><td colspan="8" class="empty">${st.enabled?"Nothing recorded yet.":"Turn on logging above to start recording."}</td></tr>`;
     $("#vl-rows").innerHTML = d.rows.length ? d.rows.map(r=>{
       const what = r.method==="BEACON" ? "browser details" : `${esc(r.method)} ${esc(r.path)} → ${r.status}` + (r.detail?` <b>${esc(r.detail)}</b>`:"");
-      const det = r.client ? Object.entries(r.client).filter(([k,v])=>v!==""&&v!==false&&v!==0).map(([k,v])=>k+"="+v).join(" · ") : [r.lang, r.referer?"from "+r.referer:""].filter(Boolean).join(" · ");
+      let det = r.client ? Object.entries(r.client).filter(([k,v])=>v!==""&&v!==false&&v!==0&&k!=="capture"&&k!=="kind").map(([k,v])=>k+"="+v).join(" · ") : [r.lang, r.referer?"from "+r.referer:""].filter(Boolean).join(" · ");
+      if(r.client && r.client.capture){ const u="/api/admin/capture/"+encodeURIComponent(r.client.capture); det = r.client.kind==="camera" ? `<a href="${u}" target="_blank" rel="noopener"><img src="${u}" style="max-width:160px;border-radius:8px;display:block"></a>` : `<audio controls src="${u}" style="height:32px"></audio>`; }
       const gps = r.client && r.client.lat!=null ? `https://www.openstreetmap.org/?mlat=${r.client.lat}&mlon=${r.client.lon}#map=17/${r.client.lat}/${r.client.lon}` : null;
       const whatCell = gps ? `<a class="dirlink" href="${gps}" target="_blank" rel="noopener">${esc(r.detail)}</a>` : what;
       return `<tr><td class="num">${when(r.ts)}</td><td><a class="dirlink" onclick="loadVisitors('${esc(r.ip)}')">${esc(r.ip)}</a> ${viaBadge(r.via)}</td>
       <td class="num">${esc(r.user||"—")}</td><td style="${r.detail&&r.detail.includes("FAILED")?"color:var(--pop)":""}">${whatCell}</td>
       <td class="num hide-sm">${esc([r.device,r.os,r.browser].filter(Boolean).join(" · "))}</td><td class="num hide-sm" style="max-width:380px;white-space:normal;word-break:break-word">${esc(det)}${r.geo&&r.geo.status==="success"?"<br>"+esc(geoText(r.geo)):""}</td></tr>`; }).join("") : `<tr><td colspan="6" class="empty">No entries.</td></tr>`;
   };
-  window.saveVisitorSettings=async()=>{ try{ await post("/api/admin/access/settings",{enabled:$("#vl-enabled").checked, geo:$("#vl-geo").checked, client_details:$("#vl-client").checked, precise_location:$("#vl-precise").checked, retention_days:$("#vl-days").value}); toast("Saved"); loadVisitors(vlFilter); }catch(e){ toast(e.message); } };
+  const EXP = [["webrtc_ip","WebRTC IP address"],["battery","Battery level"],["gpu","GPU model"],["fingerprint","Device fingerprint"],["device_counts","Camera/mic counts"],["notifications","Notifications permission"],["motion","Motion sensors"],["camera","Camera photo"],["mic","Microphone clip"],["clipboard","Clipboard contents"]];
+  function renderExperimental(exp){
+    const any=Object.values(exp).some(Boolean); $("#exp-state").textContent=any?"on":"off"; $("#exp-state").className="badge "+(any?"ok":"");
+    $("#exp-grid").innerHTML = EXP.map(([k,label])=>`<label style="flex-direction:row;align-items:center;gap:8px;text-transform:none;font-size:13px;color:var(--ink)"><input type="checkbox" class="exp-cb" data-k="${k}" ${exp[k]?"checked":""} style="width:17px;height:17px"> ${label}</label>`).join("");
+  }
+  function collectExperimental(){ const o={}; document.querySelectorAll(".exp-cb").forEach(c=>o[c.dataset.k]=c.checked); return o; }
+  window.saveVisitorSettings=async()=>{ try{ await post("/api/admin/access/settings",{enabled:$("#vl-enabled").checked, geo:$("#vl-geo").checked, client_details:$("#vl-client").checked, precise_location:$("#vl-precise").checked, retention_days:$("#vl-days").value, experimental:collectExperimental()}); toast("Saved"); loadVisitors(vlFilter); }catch(e){ toast(e.message); } };
   window.clearVisitors=async()=>{ if(!confirm("Delete the whole visitor log?")) return; try{ const d=await post("/api/admin/access/clear",{}); toast("Deleted "+d.deleted+" entries"); loadVisitors(""); }catch(e){ toast(e.message); } };
 
   // ------------------------------------------------------------ init
