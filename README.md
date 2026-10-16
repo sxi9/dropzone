@@ -128,7 +128,7 @@ The moment an account exists the page asks for a username and password. Either a
 | Storage bar, largest files, one-tap cleanup | | ✓ |
 | Pull a URL into the drop zone (server-side fetch) | | ✓ |
 | Remote screen viewer | | ✓ |
-| Admin panel (`/admin`): storage meter, accounts, directory library, file manager | | ✓ |
+| Admin panel (`/admin`): storage meter, accounts, directory library, file manager, visitor log | | ✓ |
 
 Find your machine's address with `hostname -I`, then open `http://<that-address>:8000` from **any device on the same Wi-Fi** — phone, laptop, tablet, doesn't matter. Tap **Add device** on the page for a QR code that makes onboarding the rest of your devices a five-second job.
 
@@ -183,6 +183,7 @@ Admins get an **Admin** button in the header that opens `/admin`:
 - **Overview** — a segmented storage meter (Dropzone files vs. other data vs. free), counts, the largest shared files and one-tap cleanup.
 - **Accounts** — change your own password; add accounts, reset passwords, switch roles, remove accounts. You can't demote or delete yourself, or remove the last admin.
 - **Library** — a list of folders on the server (defaults to the service user's home) that the file manager may touch. Nothing outside these folders is ever reachable.
+- **Visitors** — optional visitor log (off by default): IP and how it arrived (LAN / tailnet / public), approximate location of public IPs via ip-api.com, browser, OS, device type, language, what was requested, failed logins, plus browser details (screen, timezone, platform…) when enabled. Retention is configurable; only admins can see it.
 - **Files** — a file manager over those folders: browse, upload, download (folders come as a zip), new folder, rename, move, delete, and *Share to feed* to copy any file into the drop zone for everyone.
 
 ---

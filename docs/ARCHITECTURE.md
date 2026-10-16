@@ -225,7 +225,8 @@ Outside SQLite:
 
 * `data/files/<stored>` — file bytes. Deleting a row also `os.remove`s the file.
 * `data/users.json` — `{name: {role, salt, iter, hash, ver, updated}}`; PBKDF2-HMAC-SHA256, 600 000 rounds.
-* `data/settings.json` — `{"library_roots": [{name, path}]}` for the admin file manager; defaults to the service user's home.
+* `data/settings.json` — `{"library_roots": [{name, path}], "access_log": {enabled, geo, client_details, retention_days}}`; roots default to the service user's home, visitor logging defaults to off.
+* Tables `access_log` (one row per logged request or browser beacon: ts, ip, via, user, role, method, path, status, detail, ua, browser, os, device, referer, lang, client JSON) and `geo_cache` (ip → ip-api.com JSON, 30-day cache) back the Visitors tab. Writing happens in `record_access()` from the `after_request` hook, wrapped in try/except so logging can never fail a request; geolocation runs in a daemon thread.
 * `data/secret.key` — 32 random bytes; Flask `secret_key` and the HMAC key for screen tickets.
 
 ### 5.3 Request pipeline
@@ -370,7 +371,11 @@ Auth column: **any** = any signed-in account (or open mode), **admin** = admin r
 | POST | `/api/fm/move` | `{root, paths[], dest}` | |
 | POST | `/api/fm/delete` | `{root, paths[]}` | recursive |
 | POST | `/api/fm/share` | `{root, path}` | copies file into the feed |
-| GET | `/api/screen-status` | — | `{vnc, bridge, ws_port, error}` |
+| GET | `/api/screen-status` | — | `{vnc, bridge, ws_port, error}` (`ws_port` = `DROPZONE_WS_PUBLIC_PORT` when reached over HTTPS) |
+| GET | `/api/admin/access?limit&ip` | — | `{settings, rows, visitors, total}` visitor log |
+| POST | `/api/admin/access/settings` | `{enabled, geo, client_details, retention_days}` | |
+| POST | `/api/admin/access/clear` | — | wipes log + geo cache |
+| POST | `/api/telemetry` | browser beacon JSON | any signed-in role; stored only when logging + client details are on |
 
 Error convention: JSON `{error: "..."}` with 400/401/403/404/413/500; pages redirect to `/login` on 401.
 

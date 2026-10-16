@@ -95,6 +95,7 @@
     <button data-tab="accounts">Accounts</button>
     <button data-tab="library">Library</button>
     <button data-tab="files">Files</button>
+    <button data-tab="visitors">Visitors</button>
   </div>
 
   <!-- ============================================================ overview -->
@@ -191,6 +192,31 @@
       <div class="empty hidden" id="fm-empty">This folder is empty.</div>
     </div>
   </section>
+  <!-- ============================================================ visitors -->
+  <section id="tab-visitors" class="hidden">
+    <div class="card">
+      <h2>Visitor logging <span class="badge" id="vl-state"></span></h2>
+      <p class="sub">Off by default. When on, Dropzone records who reaches the site, from where, on what device, and what they did. Only admins can see this.</p>
+      <div class="row">
+        <label style="flex-direction:row;align-items:center;gap:8px;text-transform:none;font-size:13.5px;color:var(--ink)"><input type="checkbox" id="vl-enabled" style="width:18px;height:18px"> Log visitors</label>
+        <label style="flex-direction:row;align-items:center;gap:8px;text-transform:none;font-size:13.5px;color:var(--ink)"><input type="checkbox" id="vl-geo" style="width:18px;height:18px"> Look up location of public IPs (ip-api.com)</label>
+        <label style="flex-direction:row;align-items:center;gap:8px;text-transform:none;font-size:13.5px;color:var(--ink)"><input type="checkbox" id="vl-client" style="width:18px;height:18px"> Collect browser details (screen, timezone, platform…)</label>
+        <label>Keep for (days, 0 = forever)<input id="vl-days" type="number" min="0" max="3650" style="width:110px"></label>
+        <button class="btn go" onclick="saveVisitorSettings()">Save</button>
+        <button class="btn danger" onclick="clearVisitors()">Clear log</button>
+      </div>
+      <p class="hint" style="margin:12px 0 0">What gets stored: time, IP and how it arrived (LAN / tailnet / public), account, request, result, browser, OS, device type, referer, language, and for public IPs the country, region, city, ISP and whether it looks like a proxy or hosting provider. Browser details add screen size, viewport, timezone, languages, platform, touch, CPU cores, memory and connection type. Failed logins are flagged.</p>
+    </div>
+    <div class="card">
+      <h2>Visitors <span class="badge" id="vl-total"></span></h2>
+      <p class="sub">One line per address, newest activity first. Click an address to filter the log below.</p>
+      <table><thead><tr><th>Address</th><th>From</th><th>Location</th><th>Device</th><th class="hide-sm">Account</th><th>Hits</th><th class="hide-sm">First seen</th><th>Last seen</th></tr></thead><tbody id="vl-visitors"></tbody></table>
+    </div>
+    <div class="card">
+      <h2>Log <span class="badge" id="vl-filter"></span> <button class="btn" id="vl-clearfilter" onclick="loadVisitors('')" style="display:none">Show all</button></h2>
+      <table><thead><tr><th>When</th><th>Address</th><th>Who</th><th>What</th><th class="hide-sm">Device</th><th class="hide-sm">Details</th></tr></thead><tbody id="vl-rows"></tbody></table>
+    </div>
+  </section>
 </div>
 <div class="toast" id="toast"></div>
 
@@ -221,7 +247,8 @@
   document.querySelectorAll(".tabs button").forEach(b=>b.addEventListener("click",()=>showTab(b.dataset.tab)));
   function showTab(t){
     document.querySelectorAll(".tabs button").forEach(b=>b.classList.toggle("on",b.dataset.tab===t));
-    ["overview","accounts","library","files"].forEach(n=>$("#tab-"+n).classList.toggle("hidden",n!==t));
+    ["overview","accounts","library","files","visitors"].forEach(n=>$("#tab-"+n).classList.toggle("hidden",n!==t));
+    if(t==="visitors") loadVisitors(vlFilter);
     try{ localStorage.setItem("dz-admin-tab",t); }catch(e){}
     if(t==="files" && !fm.loaded) fmOpen($("#fm-root").value,"");
   }
@@ -333,6 +360,31 @@
   window.fmDownloadSelected=()=>{ selPaths().forEach((p,i)=>setTimeout(()=>{ const a=document.createElement("a"); a.href="/api/fm/download?"+q(fm.root,p); a.download=""; document.body.appendChild(a); a.click(); a.remove(); }, i*400)); };
   window.fmMoveSelected=async()=>{ const dest=prompt("Move into which folder? (path inside '"+fm.root+"', blank = top level)", fm.path); if(dest==null) return;
     try{ const d=await post("/api/fm/move",{root:fm.root,paths:selPaths(),dest}); toast("Moved "+d.moved); fmOpen(fm.root,fm.path); }catch(e){ toast(e.message); } };
+
+  // ------------------------------------------------------------ visitors
+  let vlFilter="";
+  const geoText=g=>!g? "" : g.status!=="success" ? (g.status==="fail"?"unknown":"lookup "+g.status) : [g.city,g.regionName,g.country].filter(Boolean).join(", ")+(g.isp?" · "+g.isp:"")+(g.proxy?" · proxy/VPN":"")+(g.hosting?" · hosting":"")+(g.mobile?" · mobile":"");
+  const viaBadge=v=>`<span class="badge ${v==="public"?"pub":v==="tailnet"?"ok":""}">${v||"?"}</span>`;
+  window.loadVisitors=async function(ip){
+    vlFilter=ip||"";
+    let d; try{ d=await api("/api/admin/access?limit=300"+(vlFilter?"&ip="+encodeURIComponent(vlFilter):"")); }catch(e){ toast(e.message); return; }
+    const st=d.settings; $("#vl-enabled").checked=!!st.enabled; $("#vl-geo").checked=!!st.geo; $("#vl-client").checked=!!st.client_details; $("#vl-days").value=st.retention_days;
+    $("#vl-state").textContent=st.enabled?"on":"off"; $("#vl-state").className="badge "+(st.enabled?"ok":"");
+    $("#vl-total").textContent=d.total+" entries"; $("#vl-filter").textContent=vlFilter||"all"; $("#vl-clearfilter").style.display=vlFilter?"":"none";
+    $("#vl-visitors").innerHTML = d.visitors.length ? d.visitors.map(v=>`<tr>
+      <td><a class="dirlink" onclick="loadVisitors('${esc(v.ip)}')">${esc(v.ip)}</a>${v.failed_logins?` <span class="badge pub">${v.failed_logins} failed login${v.failed_logins>1?"s":""}</span>`:""}</td>
+      <td>${viaBadge(v.via)}</td><td class="num">${esc(geoText(v.geo))||(v.via==="public"?"…":"—")}</td>
+      <td class="num">${esc([v.device,v.os,v.browser].filter(Boolean).join(" · "))}</td><td class="num hide-sm">${esc(v.user||"—")}</td>
+      <td class="num">${v.hits}</td><td class="num hide-sm">${when(v.first_seen)}</td><td class="num">${when(v.last_seen)}</td></tr>`).join("") : `<tr><td colspan="8" class="empty">${st.enabled?"Nothing recorded yet.":"Turn on logging above to start recording."}</td></tr>`;
+    $("#vl-rows").innerHTML = d.rows.length ? d.rows.map(r=>{
+      const what = r.method==="BEACON" ? "browser details" : `${esc(r.method)} ${esc(r.path)} → ${r.status}` + (r.detail?` <b>${esc(r.detail)}</b>`:"");
+      const det = r.client ? Object.entries(r.client).filter(([k,v])=>v!==""&&v!==false&&v!==0).map(([k,v])=>k+"="+v).join(" · ") : [r.lang, r.referer?"from "+r.referer:""].filter(Boolean).join(" · ");
+      return `<tr><td class="num">${when(r.ts)}</td><td><a class="dirlink" onclick="loadVisitors('${esc(r.ip)}')">${esc(r.ip)}</a> ${viaBadge(r.via)}</td>
+      <td class="num">${esc(r.user||"—")}</td><td style="${r.detail&&r.detail.includes("FAILED")?"color:var(--pop)":""}">${what}</td>
+      <td class="num hide-sm">${esc([r.device,r.os,r.browser].filter(Boolean).join(" · "))}</td><td class="num hide-sm" style="max-width:380px;white-space:normal;word-break:break-word">${esc(det)}${r.geo&&r.geo.status==="success"?"<br>"+esc(geoText(r.geo)):""}</td></tr>`; }).join("") : `<tr><td colspan="6" class="empty">No entries.</td></tr>`;
+  };
+  window.saveVisitorSettings=async()=>{ try{ await post("/api/admin/access/settings",{enabled:$("#vl-enabled").checked, geo:$("#vl-geo").checked, client_details:$("#vl-client").checked, retention_days:$("#vl-days").value}); toast("Saved"); loadVisitors(vlFilter); }catch(e){ toast(e.message); } };
+  window.clearVisitors=async()=>{ if(!confirm("Delete the whole visitor log?")) return; try{ const d=await post("/api/admin/access/clear",{}); toast("Deleted "+d.deleted+" entries"); loadVisitors(""); }catch(e){ toast(e.message); } };
 
   // ------------------------------------------------------------ init
   load().then(()=>{ let t=null; try{ t=localStorage.getItem("dz-admin-tab"); }catch(e){} if(t) showTab(t); }).catch(e=>toast(e.message));

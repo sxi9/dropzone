@@ -1025,7 +1025,22 @@ x11vnc -display :0 -localhost \
     doRender();
     loadState();
     startSync();
+    sendTelemetry();
   })();
+
+  // ---------------------------------------------------------------- visitor details (only stored when the admin enabled logging)
+  function sendTelemetry(){
+    try{
+      const n=navigator, sc=screen, uad=n.userAgentData||{};
+      const body={ page:location.pathname, referrer:document.referrer||"", screen:sc.width+"x"+sc.height, viewport:innerWidth+"x"+innerHeight,
+        dpr:devicePixelRatio, colorDepth:sc.colorDepth, tz:(Intl.DateTimeFormat().resolvedOptions().timeZone||""), lang:n.language,
+        languages:(n.languages||[]).join(","), platform:n.platform, touch:("ontouchstart" in window)||n.maxTouchPoints>0,
+        cores:n.hardwareConcurrency||0, memory:n.deviceMemory||0, connection:(n.connection&&n.connection.effectiveType)||"",
+        uaBrands:(uad.brands||[]).map(b=>b.brand+" "+b.version).join(", "), uaMobile:!!uad.mobile, uaPlatform:uad.platform||"",
+        vendor:n.vendor||"", cookies:n.cookieEnabled, dnt:n.doNotTrack||"", online:n.onLine };
+      post("/api/telemetry", body).catch(()=>{});
+    }catch(e){}
+  }
 })();
 
 </script>

@@ -240,6 +240,12 @@ def init_db():
         CREATE TABLE IF NOT EXISTS activity(id TEXT PRIMARY KEY, icon TEXT, text TEXT, ip TEXT, created REAL);
         CREATE TABLE IF NOT EXISTS messages(id TEXT PRIMARY KEY, ip TEXT, dev TEXT, text TEXT, created REAL);
         CREATE TABLE IF NOT EXISTS meta    (k TEXT PRIMARY KEY, v TEXT);
+        CREATE TABLE IF NOT EXISTS access_log(id TEXT PRIMARY KEY, ts REAL, ip TEXT, via TEXT, user TEXT, role TEXT,
+                                            method TEXT, path TEXT, status INTEGER, detail TEXT, ua TEXT, browser TEXT,
+                                            os TEXT, device TEXT, referer TEXT, lang TEXT, client TEXT);
+        CREATE INDEX IF NOT EXISTS access_log_ts ON access_log(ts);
+        CREATE INDEX IF NOT EXISTS access_log_ip ON access_log(ip);
+        CREATE TABLE IF NOT EXISTS geo_cache (ip TEXT PRIMARY KEY, json TEXT, ts REAL);
         """)
         # migrations for anyone upgrading from v3
         for table, cols in (("files", ["pinned INTEGER DEFAULT 0", "token TEXT", "owner_ip TEXT", "target_ip TEXT", "expires REAL", "label TEXT"]),
@@ -414,6 +420,8 @@ def _security_headers(resp):
     resp.headers.setdefault("Permissions-Policy", "camera=(), geolocation=(), payment=()")
     if request.path.startswith("/api/") or request.path == "/login":
         resp.headers["Cache-Control"] = "no-store"
+    try: record_access(resp)
+    except Exception: pass          # logging must never break a request
     return resp
 
 # --------------------------------------------------------------------------- pages
@@ -862,6 +870,9 @@ def load_settings():
     if not s.get("library_roots"):
         home = os.path.expanduser("~")
         s["library_roots"] = [{"name": "Home", "path": home}] if os.path.isdir(home) else []
+    al = s.setdefault("access_log", {})
+    al.setdefault("enabled", False); al.setdefault("geo", True); al.setdefault("client_details", True)
+    al.setdefault("retention_days", 90)
     return s
 
 def save_settings(s):
@@ -1101,6 +1112,171 @@ def api_fm_share():
         log_activity(conn, "up", f"{who} shared {name} from library '{d.get('root')}'", ip)
     bump()
     return jsonify(ok=True)
+
+# --------------------------------------------------------------------------- visitor / access log
+# Opt-in (admin panel -> Visitors). Records who reached the site, from where, with what device and what they did.
+GEO_URL = "http://ip-api.com/json/{ip}?fields=status,country,regionName,city,zip,lat,lon,timezone,isp,org,as,proxy,hosting,mobile"
+_geo_lock = threading.Lock(); _geo_inflight = set()
+NOISY_PATHS = ("/api/events", "/api/state", "/api/screen-status", "/api/admin/access", "/api/telemetry", "/qr.svg", "/static/")
+LOGGED_PREFIXES = ("/", "/login", "/logout", "/admin", "/screen", "/file/", "/s/", "/api/upload", "/api/note", "/api/chat",
+                   "/api/item/", "/api/bulk-delete", "/api/cleanup", "/api/fm/", "/api/admin/", "/api/password",
+                   "/api/fetch-url", "/api/reveal/", "/api/zip", "/api/device/name", "/api/label", "/api/pin/")
+
+def access_cfg():
+    return load_settings()["access_log"]
+
+def classify_ip(ip):
+    try:
+        a = ipaddress.ip_address(ip)
+    except ValueError:
+        return "unknown"
+    if a.is_loopback: return "local"
+    if a in ipaddress.ip_network("100.64.0.0/10"): return "tailnet"
+    if a.is_private or a.is_link_local: return "lan"
+    return "public"
+
+def parse_ua(ua):
+    u = ua or ""
+    if re.search(r"bot|crawl|spider|curl|wget|python-requests|httpclient|scanner", u, re.I): device = "bot"
+    elif re.search(r"iPad|Tablet", u) or ("Android" in u and "Mobile" not in u): device = "tablet"
+    elif re.search(r"Mobi|iPhone|iPod|Android", u): device = "phone"
+    elif u: device = "desktop"
+    else: device = "unknown"
+    m = re.search(r"Windows NT ([\d.]+)", u)
+    if m: osn = {"10.0": "Windows 10/11", "6.3": "Windows 8.1", "6.1": "Windows 7"}.get(m.group(1), "Windows " + m.group(1))
+    elif re.search(r"iPhone|iPad|iPod", u):
+        m = re.search(r"OS (\d+)[_.](\d+)", u); osn = "iOS " + (f"{m.group(1)}.{m.group(2)}" if m else "")
+    elif "Android" in u:
+        m = re.search(r"Android ([\d.]+)", u); osn = "Android " + (m.group(1) if m else "")
+    elif "CrOS" in u: osn = "ChromeOS"
+    elif "Mac OS X" in u:
+        m = re.search(r"Mac OS X (\d+)[_.](\d+)", u); osn = "macOS " + (f"{m.group(1)}.{m.group(2)}" if m else "")
+    elif "Linux" in u: osn = "Linux"
+    else: osn = ""
+    if "Edg/" in u: b = "Edge " + re.search(r"Edg/([\d.]+)", u).group(1).split(".")[0]
+    elif "OPR/" in u: b = "Opera " + re.search(r"OPR/([\d.]+)", u).group(1).split(".")[0]
+    elif "SamsungBrowser/" in u: b = "Samsung Internet"
+    elif "Firefox/" in u: b = "Firefox " + re.search(r"Firefox/([\d.]+)", u).group(1).split(".")[0]
+    elif "Chrome/" in u or "CriOS/" in u:
+        m = re.search(r"(?:Chrome|CriOS)/([\d.]+)", u); b = "Chrome " + m.group(1).split(".")[0]
+    elif "Safari/" in u and "Version/" in u: b = "Safari " + re.search(r"Version/([\d.]+)", u).group(1).split(".")[0]
+    elif u: b = u.split("/")[0][:30]
+    else: b = ""
+    return b.strip(), osn.strip(), device
+
+def _geo_fetch(ip):
+    try:
+        req = urllib.request.Request(GEO_URL.format(ip=ip), headers={"User-Agent": "Dropzone/6"})
+        with urllib.request.urlopen(req, timeout=8) as r:
+            data = json.loads(r.read().decode("utf-8", "replace"))
+        if data.get("status") != "success": data = {"status": "fail"}
+    except Exception as e:
+        data = {"status": "error", "error": e.__class__.__name__}
+    with db() as conn:
+        conn.execute("INSERT OR REPLACE INTO geo_cache (ip, json, ts) VALUES (?,?,?)", (ip, json.dumps(data), time.time()))
+    with _geo_lock: _geo_inflight.discard(ip)
+
+def geo_lookup_async(ip):
+    """Look a public IP up once (ip-api.com, free tier) in the background; results are cached for 30 days."""
+    if classify_ip(ip) != "public": return
+    with db() as conn:
+        row = conn.execute("SELECT ts FROM geo_cache WHERE ip=?", (ip,)).fetchone()
+    if row and time.time() - row["ts"] < 30 * 86400: return
+    with _geo_lock:
+        if ip in _geo_inflight: return
+        _geo_inflight.add(ip)
+    threading.Thread(target=_geo_fetch, args=(ip,), daemon=True).start()
+
+def _should_log(path, status):
+    if path.startswith(NOISY_PATHS) and path != "/": return False
+    if status in (401, 403): return True
+    return path == "/" or any(path.startswith(pfx) for pfx in LOGGED_PREFIXES if pfx != "/")
+
+def record_access(resp):
+    cfg = access_cfg()
+    if not cfg.get("enabled"): return
+    path = request.path; status = resp.status_code
+    if not _should_log(path, status): return
+    ip = client_ip(); u = current_user() or {}
+    ua = request.headers.get("User-Agent", "")[:400]
+    browser, osn, device = parse_ua(ua)
+    detail = ""
+    if path == "/login" and request.method == "POST":
+        detail = f"login {'ok' if status == 302 else 'FAILED'} as '{(request.form.get('username') or '')[:32]}'"
+    elif path.startswith("/file/") or path.startswith("/s/"):
+        detail = "download" if path.endswith("/download") else "view"
+    with db() as conn:
+        conn.execute("""INSERT INTO access_log (id,ts,ip,via,user,role,method,path,status,detail,ua,browser,os,device,referer,lang,client)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL)""",
+                     (uuid.uuid4().hex, time.time(), ip, classify_ip(ip), u.get("name") or "", u.get("role") or "",
+                      request.method, path[:200], status, detail, ua, browser, osn, device,
+                      (request.headers.get("Referer") or "")[:200], (request.headers.get("Accept-Language") or "")[:80]))
+        days = float(cfg.get("retention_days") or 0)
+        if days > 0:
+            conn.execute("DELETE FROM access_log WHERE ts < ?", (time.time() - days * 86400,))
+    if cfg.get("geo"): geo_lookup_async(ip)
+
+@app.route("/api/telemetry", methods=["POST"])
+@require_auth
+def api_telemetry():
+    """Browser-side details (screen, timezone, platform...) sent once per page load when client details are enabled."""
+    cfg = access_cfg()
+    if not (cfg.get("enabled") and cfg.get("client_details")): return jsonify(ok=False)
+    d = request.json or {}
+    keep = {k: (str(v)[:120] if not isinstance(v, (int, float, bool)) else v) for k, v in d.items() if k in (
+        "screen", "viewport", "dpr", "colorDepth", "tz", "lang", "languages", "platform", "touch", "cores", "memory",
+        "connection", "uaBrands", "uaMobile", "uaPlatform", "vendor", "cookies", "dnt", "referrer", "page", "online", "battery")}
+    ip = client_ip(); u = current_user() or {}
+    browser, osn, device = parse_ua(request.headers.get("User-Agent", ""))
+    with db() as conn:
+        conn.execute("""INSERT INTO access_log (id,ts,ip,via,user,role,method,path,status,detail,ua,browser,os,device,referer,lang,client)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                     (uuid.uuid4().hex, time.time(), ip, classify_ip(ip), u.get("name") or "", u.get("role") or "",
+                      "BEACON", "client-details", 200, f"{keep.get('screen','')} {keep.get('tz','')} {keep.get('platform','')}".strip(),
+                      request.headers.get("User-Agent", "")[:400], browser, osn, device, "", (request.headers.get("Accept-Language") or "")[:80],
+                      json.dumps(keep)))
+    return jsonify(ok=True)
+
+@app.route("/api/admin/access")
+@require_admin
+def api_admin_access():
+    limit = min(int(request.args.get("limit") or 300), 2000)
+    ip = (request.args.get("ip") or "").strip()
+    with db() as conn:
+        q = "SELECT * FROM access_log" + (" WHERE ip=?" if ip else "") + " ORDER BY ts DESC LIMIT ?"
+        rows = [dict(r) for r in conn.execute(q, ((ip, limit) if ip else (limit,))).fetchall()]
+        geo = {r["ip"]: json.loads(r["json"]) for r in conn.execute("SELECT ip, json FROM geo_cache").fetchall()}
+        visitors = [dict(r) for r in conn.execute("""SELECT ip, MIN(ts) first_seen, MAX(ts) last_seen, COUNT(*) hits,
+                        MAX(user) user, MAX(via) via, MAX(browser) browser, MAX(os) os, MAX(device) device,
+                        SUM(CASE WHEN detail LIKE 'login FAILED%' THEN 1 ELSE 0 END) failed_logins
+                        FROM access_log GROUP BY ip ORDER BY last_seen DESC LIMIT 200""").fetchall()]
+        total = conn.execute("SELECT COUNT(*) c FROM access_log").fetchone()["c"]
+    for r in rows: r["client"] = json.loads(r["client"]) if r.get("client") else None; r["geo"] = geo.get(r["ip"])
+    for v in visitors: v["geo"] = geo.get(v["ip"])
+    return jsonify(settings=access_cfg(), rows=rows, visitors=visitors, total=total)
+
+@app.route("/api/admin/access/settings", methods=["POST"])
+@require_admin
+def api_admin_access_settings():
+    d = request.json or {}
+    s = load_settings(); al = s["access_log"]
+    for k in ("enabled", "geo", "client_details"):
+        if k in d: al[k] = bool(d[k])
+    if "retention_days" in d:
+        try: al["retention_days"] = max(0, min(3650, int(d["retention_days"])))
+        except (TypeError, ValueError): pass
+    save_settings(s)
+    with db() as conn:
+        log_activity(conn, "join", f"{current_user()['name']} set visitor logging {'ON' if al['enabled'] else 'OFF'}", client_ip())
+    return jsonify(ok=True, settings=al)
+
+@app.route("/api/admin/access/clear", methods=["POST"])
+@require_admin
+def api_admin_access_clear():
+    with db() as conn:
+        n = conn.execute("DELETE FROM access_log").rowcount
+        conn.execute("DELETE FROM geo_cache")
+    return jsonify(ok=True, deleted=n)
 
 # ---- remote screen (x11vnc + noVNC via built-in websockify bridge) ----
 import socket as _socket
