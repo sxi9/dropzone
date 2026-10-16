@@ -19,6 +19,10 @@
   #bar button:hover,#bar a:hover{border-color:var(--signal);color:var(--signal)}
   #screen{position:fixed;inset:0}
   #msg{position:fixed;inset:0;display:grid;place-items:center;text-align:center;padding:24px;z-index:10}
+  #msg[hidden]{display:none}
+  #msg .card{position:relative}
+  #msgClose{position:absolute;top:10px;right:12px;border:0;background:transparent;color:var(--soft);font-size:22px;line-height:1;cursor:pointer;padding:4px 8px;border-radius:8px}
+  #msgClose:hover{color:var(--ink);background:rgba(255,255,255,.08)}
   #msg .card{background:var(--paper);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border:1px solid var(--line);border-radius:22px;padding:30px 28px;max-width:560px;box-shadow:0 26px 64px -28px rgba(0,0,0,.85)}
   #msg h2{margin:0 0 6px;font-size:19px}
   #msg p{margin:0 0 14px;color:var(--soft);font-size:14px;line-height:1.55}
@@ -40,6 +44,7 @@
 <div id="screen"></div>
 <div id="msg" hidden>
   <div class="card">
+    <button id="msgClose" title="Close" aria-label="Close">×</button>
     <h2 id="msgTitle">Screen sharing isn't running yet</h2>
     <p id="msgBody">One-time setup on the laptop — install the screen server and start it:</p>
     <pre id="msgCmd">sudo apt install x11vnc
@@ -107,6 +112,8 @@ x11vnc -display :0 -localhost -forever -shared -nopw -bg</pre>
     if(!connected) connect(s.ws_port);
   }
 
+  document.getElementById("msgClose").onclick = ()=>{ msg.hidden = true; };
+  msg.addEventListener("click", (e)=>{ if(e.target === msg) msg.hidden = true; });
   document.getElementById("retry").onclick = ()=>{ manualStop=false; connected=false; if(rfb){ try{rfb.disconnect();}catch(e){} rfb=null; } msg.hidden=true; boot(); };
   document.getElementById("fs").onclick = ()=>{ const el=document.documentElement; if(document.fullscreenElement) document.exitFullscreen(); else el.requestFullscreen && el.requestFullscreen(); };
   document.getElementById("keys").onclick = ()=>{ if(rfb) rfb.sendCtrlAltDel(); };
