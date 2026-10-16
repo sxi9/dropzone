@@ -10,6 +10,7 @@ All notable changes to this project are documented here.
 - **Admin panel** at `/admin` (Admin button in the header): segmented storage meter with counts and cleanup, account management (add / reset password / change role / remove, with guards against locking yourself out), a *directory library* of server folders, and a file manager over them (browse, upload, download file or folder-as-zip, new folder, rename, move, delete, share-to-feed). All paths are confined to the configured folders.
 - The sidebar storage bar is now a labelled two-tone meter showing Dropzone's share of the disk.
 - **Password** button in the header: change your own password from the UI (asks for the current one; signs out your other devices).
+- `DROPZONE_WS_PUBLIC_PORT`: the screen viewer uses this bridge port when the page was opened over HTTPS, so the remote screen works through a Funnel route. `x11vnc.service` now uses `-auth guess` (works with GDM) and restarts always.
 - README section on hosting through Tailscale.
 
 ### Security

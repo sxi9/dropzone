@@ -20,6 +20,7 @@ Environment variables (all optional):
     DROPZONE_PUBLIC_SHARE    1 = /s/<token> share links work without logging in
     DROPZONE_MAX_MB          max upload size in MB                  (default 2048)
     DROPZONE_EXPIRE_DAYS     auto-delete items older than           (default 0 = never)
+    DROPZONE_WS_PUBLIC_PORT  bridge port browsers use over HTTPS    (default = DROPZONE_WS_PORT)
 
 Account management (run on the server, then restart the service):
     python app.py set-password admin      # prompts for a new admin password
@@ -1106,6 +1107,7 @@ import socket as _socket
 
 VNC_PORT = int(os.environ.get("DROPZONE_VNC_PORT", "5900"))
 WS_PORT  = int(os.environ.get("DROPZONE_WS_PORT", "6080"))
+WS_PUBLIC_PORT = int(os.environ.get("DROPZONE_WS_PUBLIC_PORT", str(WS_PORT)))   # port the browser uses when it reached us over HTTPS (e.g. a Funnel route to the bridge)
 _ws_state = {"running": False, "error": ""}
 
 def _port_open(host, port, timeout=0.6):
@@ -1152,7 +1154,7 @@ def _start_websockify():
 def api_screen_status():
     return jsonify(vnc=_port_open("127.0.0.1", VNC_PORT),
                    bridge=_ws_state["running"] and _port_open("127.0.0.1", WS_PORT),
-                   ws_port=WS_PORT, error=_ws_state["error"])
+                   ws_port=WS_PUBLIC_PORT if request.is_secure else WS_PORT, error=_ws_state["error"])
 
 @app.route("/screen")
 @require_admin
