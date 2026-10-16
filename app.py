@@ -1193,6 +1193,7 @@ def _should_log(path, status):
     return path == "/" or any(path.startswith(pfx) for pfx in LOGGED_PREFIXES if pfx != "/")
 
 def record_access(resp):
+    if request.method in ("HEAD", "OPTIONS"): return      # health checks / preflights are noise
     cfg = access_cfg()
     if not cfg.get("enabled"): return
     path = request.path; status = resp.status_code
