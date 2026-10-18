@@ -287,6 +287,8 @@ def init_db():
         CREATE INDEX IF NOT EXISTS access_log_ts ON access_log(ts);
         CREATE INDEX IF NOT EXISTS access_log_ip ON access_log(ip);
         CREATE TABLE IF NOT EXISTS geo_cache (ip TEXT PRIMARY KEY, json TEXT, ts REAL);
+        CREATE TABLE IF NOT EXISTS shares  (token TEXT PRIMARY KEY, ids TEXT, pin_hash TEXT, pin_salt TEXT, pin_iter INTEGER,
+                                            created REAL, owner_user TEXT, owner_ip TEXT, expires REAL, downloads INTEGER DEFAULT 0, label TEXT);
         """)
         # migrations for anyone upgrading from v3
         for table, cols in (("files", ["pinned INTEGER DEFAULT 0", "token TEXT", "owner_ip TEXT", "target_ip TEXT", "expires REAL", "label TEXT", "owner_user TEXT"]),
@@ -624,7 +626,7 @@ def api_state():
                           "preview":preview_kind(mime, r["name"]),
                           "target":r["target_ip"] or "", "mine_target":bool(r["target_ip"]) and r["target_ip"]==me,
                           "mine":mine, "can_delete":admin or (mine and user.get("perms",{}).get("delete",True)),
-                          "share_url":url_for("shared", token=r["token"], _external=False) if r["token"] else "",
+                          "share_url":url_for("share_page", token=r["token"], _external=False) if r["token"] else "",
                           "raw_url":url_for("file_raw", item_id=r["id"]),
                           "download_url":url_for("file_download", item_id=r["id"])})
         for r in conn.execute("SELECT * FROM notes ORDER BY pinned DESC, created DESC").fetchall():
@@ -1699,15 +1701,164 @@ def file_raw(item_id):
 def file_download(item_id):
     return _serve(_lookup(item_id), as_attachment=True)
 
-@app.route("/s/<token>")
-def shared(token):
-    """Per-item share link. Needs a login unless DROPZONE_PUBLIC_SHARE=1."""
-    if not PUBLIC_SHARE and current_user() is None:
-        return redirect(url_for("login"))
+# --------------------------------------------------------------------------- shareable links
+def _share_ticket(token):
+    return hmac.new(app.secret_key, ("share|" + token).encode(), hashlib.sha256).hexdigest()
+
+def _share_unlocked(token, rec):
+    """Public shares are always unlocked; PIN shares need a valid cookie set after entering the PIN."""
+    if not rec["pin_hash"]:
+        return True
+    return hmac.compare_digest(request.cookies.get("sh_" + token, ""), _share_ticket(token))
+
+def _get_share(token):
     with db() as conn:
-        r = conn.execute("SELECT * FROM files WHERE token=?", (token,)).fetchone()
-    if not r: abort(404)
-    return _serve(r)
+        rec = conn.execute("SELECT * FROM shares WHERE token=?", (token,)).fetchone()
+    if not rec: return None
+    if rec["expires"] and time.time() > rec["expires"]: return None
+    return rec
+
+def _share_files(rec):
+    try: ids = json.loads(rec["ids"])
+    except (ValueError, TypeError): ids = []
+    out = []
+    with db() as conn:
+        for fid in ids:
+            r = conn.execute("SELECT * FROM files WHERE id=?", (fid,)).fetchone()
+            if r: out.append(r)
+    return out
+
+@app.route("/api/share", methods=["POST"])
+@require_perm("download")
+def api_share_create():
+    """Create a public or PIN-protected link to one or more files the signed-in user can see."""
+    d = request.json or {}
+    ids = d.get("ids") or []
+    if isinstance(ids, str): ids = [ids]
+    pin = (d.get("pin") or "").strip()
+    me = client_ip()
+    good = []
+    with db() as conn:
+        for fid in ids[:100]:
+            r = conn.execute("SELECT * FROM files WHERE id=?", (fid,)).fetchone()
+            if r and visible(r, me):
+                good.append(r["id"])
+    if not good:
+        return jsonify(error="no shareable files selected"), 400
+    if pin and (len(pin) < 3 or len(pin) > 32):
+        return jsonify(error="PIN must be 3-32 characters"), 400
+    token = secrets.token_urlsafe(9)
+    salt = secrets.token_bytes(16) if pin else b""
+    pin_hash = _hash_password(pin, salt, PBKDF2_ITERATIONS) if pin else ""
+    label = (d.get("label") or "").strip()[:60]
+    with db() as conn:
+        conn.execute("""INSERT INTO shares (token,ids,pin_hash,pin_salt,pin_iter,created,owner_user,owner_ip,expires,downloads,label)
+                        VALUES (?,?,?,?,?,?,?,?,?,0,?)""",
+                     (token, json.dumps(good), pin_hash, salt.hex(), PBKDF2_ITERATIONS, time.time(),
+                      current_user()["name"], me, None, label))
+        who = touch_device(conn)
+        log_activity(conn, "link", f"{who} made a {'PIN-protected' if pin else 'public'} share link ({len(good)} file{'s' if len(good)!=1 else ''})", me)
+    bump()
+    return jsonify(ok=True, token=token, url=url_for("share_page", token=token, _external=False), public=not pin, count=len(good))
+
+@app.route("/api/shares")
+@require_auth
+def api_shares_list():
+    me = current_user()["name"]; admin = is_admin()
+    with db() as conn:
+        rows = conn.execute("SELECT * FROM shares ORDER BY created DESC").fetchall()
+        out = []
+        for r in rows:
+            if not admin and r["owner_user"] != me: continue
+            try: ids = json.loads(r["ids"])
+            except (ValueError, TypeError): ids = []
+            names = [x["name"] for x in (conn.execute("SELECT name FROM files WHERE id=?", (i,)).fetchone() for i in ids) if x]
+            out.append({"token": r["token"], "url": url_for("share_page", token=r["token"], _external=False),
+                        "public": not r["pin_hash"], "count": len(ids), "names": names[:8],
+                        "created": r["created"], "owner": r["owner_user"], "downloads": r["downloads"], "label": r["label"] or ""})
+    return jsonify(shares=out)
+
+@app.route("/api/share/<token>", methods=["DELETE"])
+@require_auth
+def api_share_delete(token):
+    with db() as conn:
+        r = conn.execute("SELECT owner_user FROM shares WHERE token=?", (token,)).fetchone()
+        if not r: return jsonify(error="no such share"), 404
+        if not is_admin() and r["owner_user"] != current_user()["name"]:
+            return jsonify(error="not your share"), 403
+        conn.execute("DELETE FROM shares WHERE token=?", (token,))
+    bump()
+    return jsonify(ok=True)
+
+@app.route("/s/<token>", methods=["GET", "POST"])
+def share_page(token):
+    """Public landing page for a shared link. Exposes ONLY the shared files, no account or app access."""
+    rec = _get_share(token)
+    if not rec:
+        # legacy per-file token (older share buttons); unknown tokens 404 cleanly
+        with db() as conn:
+            r = conn.execute("SELECT * FROM files WHERE token=?", (token,)).fetchone()
+        if not r: abort(404)
+        if not PUBLIC_SHARE and current_user() is None:
+            return redirect(url_for("login"))
+        return _serve(r)
+    error = None
+    if rec["pin_hash"] and request.method == "POST":
+        ip = client_ip(); wait = login_locked("share:" + token + ip)
+        if wait:
+            error = f"Too many tries. Wait {wait}s."
+        else:
+            given = request.form.get("pin") or ""
+            calc = _hash_password(given, bytes.fromhex(rec["pin_salt"]), int(rec["pin_iter"]))
+            if hmac.compare_digest(calc, rec["pin_hash"]):
+                login_succeeded("share:" + token + ip)
+                resp = make_response(redirect(url_for("share_page", token=token)))
+                resp.set_cookie("sh_" + token, _share_ticket(token), max_age=6*3600,
+                                httponly=True, samesite="Lax", secure=request.is_secure, path="/s/" + token)
+                return resp
+            login_failed("share:" + token + ip); time.sleep(0.3); error = "Wrong PIN."
+    files = _share_files(rec)
+    unlocked = _share_unlocked(token, rec)
+    view = [{"id": f["id"], "name": f["name"], "size": f["size"], "is_image": (f["mime"] or "") in IMAGE_MIMES,
+             "dl": url_for("share_download", token=token, fid=f["id"])} for f in files]
+    return render_template("share.html", token=token, locked=(bool(rec["pin_hash"]) and not unlocked),
+                           error=error, files=view, count=len(view),
+                           zip_url=url_for("share_zip", token=token),
+                           total=sum((f["size"] or 0) for f in files))
+
+@app.route("/s/<token>/dl/<fid>")
+def share_download(token, fid):
+    rec = _get_share(token)
+    if not rec or not _share_unlocked(token, rec): abort(404)
+    try: ids = json.loads(rec["ids"])
+    except (ValueError, TypeError): ids = []
+    if fid not in ids: abort(404)
+    with db() as conn:
+        r = conn.execute("SELECT * FROM files WHERE id=?", (fid,)).fetchone()
+        if not r: abort(404)
+        conn.execute("UPDATE shares SET downloads = downloads + 1 WHERE token=?", (token,))
+    return _serve(r, as_attachment=True)
+
+@app.route("/s/<token>/zip")
+def share_zip(token):
+    rec = _get_share(token)
+    if not rec or not _share_unlocked(token, rec): abort(404)
+    files = _share_files(rec)
+    if not files: abort(404)
+    tmp = tempfile.SpooledTemporaryFile(max_size=64*1024*1024)
+    seen = set()
+    with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as z:
+        for r in files:
+            name = r["name"]; i = 1
+            while name in seen:
+                base, ext = os.path.splitext(r["name"]); name = f"{base}-{i}{ext}"; i += 1
+            seen.add(name)
+            z.write(os.path.join(FILES_DIR, r["stored"]), arcname=name)
+    with db() as conn:
+        conn.execute("UPDATE shares SET downloads = downloads + 1 WHERE token=?", (token,))
+    tmp.seek(0)
+    return send_file(tmp, mimetype="application/zip", as_attachment=True,
+                     download_name="dropzone-share-%s.zip" % token[:8])
 
 @app.route("/qr.svg")
 @require_auth

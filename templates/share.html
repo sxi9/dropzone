@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Shared files · Dropzone</title>
+<style>
+  :root{ --canvas:#dfe7e4; --paper:#FCFBF8; --ink:#12273a; --ink-soft:#52647a; --line:rgba(110,135,150,.22); --signal:#0C8A7C; --pop:#E8633A; --shadow:0 22px 54px -30px rgba(16,38,58,.5); }
+  @media(prefers-color-scheme:dark){ :root{ --canvas:#080e16; --paper:#1b2836; --ink:#EAF1F5; --ink-soft:#9eb0bf; --line:rgba(255,255,255,.12); --signal:#2ad6c3; --pop:#F0744A; --shadow:0 26px 64px -28px rgba(0,0,0,.8);} }
+  *{box-sizing:border-box} html,body{margin:0}
+  body{background:var(--canvas);color:var(--ink);min-height:100dvh;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased;display:flex;flex-direction:column;align-items:center;padding:24px 16px}
+  .brand{font-family:ui-monospace,Menlo,monospace;font-weight:700;letter-spacing:.24em;text-transform:uppercase;font-size:13px;color:var(--signal);margin:6px 0 20px}
+  .card{background:var(--paper);border:1px solid var(--line);border-radius:20px;box-shadow:var(--shadow);width:100%;max-width:560px;padding:24px}
+  h1{font-size:19px;margin:0 0 4px} .sub{color:var(--ink-soft);font-size:13.5px;margin:0 0 18px}
+  .row{display:flex;align-items:center;gap:12px;padding:11px 12px;border:1px solid var(--line);border-radius:13px;margin-bottom:9px}
+  .ic{width:38px;height:38px;border-radius:11px;flex:none;display:grid;place-items:center;background:color-mix(in srgb,var(--signal) 14%,transparent);color:var(--signal);overflow:hidden}
+  .ic img{width:100%;height:100%;object-fit:cover}
+  .nm{flex:1;min-width:0} .nm b{display:block;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .nm span{font-size:12px;color:var(--ink-soft);font-family:ui-monospace,Menlo,monospace}
+  a.dl{border:1px solid var(--line);background:transparent;color:var(--ink);text-decoration:none;font-size:13px;padding:8px 14px;border-radius:10px;white-space:nowrap} a.dl:hover{border-color:var(--signal);color:var(--signal)}
+  a.all{display:inline-block;margin-top:8px;background:var(--signal);color:#06231f;font-weight:600;text-decoration:none;font-size:14px;padding:11px 18px;border-radius:12px}
+  form input{width:100%;font-size:17px;padding:13px 14px;border:1px solid var(--line);border-radius:12px;background:transparent;color:var(--ink);text-align:center;letter-spacing:.2em;box-sizing:border-box}
+  form input:focus{outline:2px solid var(--signal);border-color:transparent}
+  form button{margin-top:12px;width:100%;font-size:15px;font-weight:600;padding:13px;border:0;border-radius:12px;background:var(--signal);color:#06231f;cursor:pointer}
+  .err{color:var(--pop);font-size:13px;margin-top:10px;min-height:16px}
+  .lock{width:46px;height:46px;border-radius:14px;display:grid;place-items:center;background:color-mix(in srgb,var(--pop) 14%,transparent);color:var(--pop);margin:0 auto 12px}
+  .foot{color:var(--ink-soft);font-size:11.5px;margin-top:18px;text-align:center}
+</style>
+</head>
+<body>
+  <div class="brand">◇ dropzone</div>
+  <div class="card">
+    {% if locked %}
+      <div class="lock"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="9" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg></div>
+      <h1 style="text-align:center">This link is protected</h1>
+      <p class="sub" style="text-align:center">Enter the PIN to see the shared {{ 'file' if count == 1 else 'files' }}.</p>
+      <form method="post" autocomplete="off">
+        <input name="pin" type="password" inputmode="text" autofocus placeholder="PIN">
+        <button type="submit">Unlock</button>
+        <div class="err">{{ error or "" }}</div>
+      </form>
+    {% else %}
+      <h1>{{ count }} shared file{{ 's' if count != 1 else '' }}</h1>
+      <p class="sub">Shared with you via Dropzone. Download below.</p>
+      {% for f in files %}
+      <div class="row">
+        <span class="ic">{% if f.is_image %}<img src="{{ f.dl }}" alt="">{% else %}<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2h8l4 4v16H6z"></path><path d="M14 2v4h4"></path></svg>{% endif %}</span>
+        <span class="nm"><b title="{{ f.name }}">{{ f.name }}</b><span>{{ (f.size / 1048576) | round(2) }} MB</span></span>
+        <a class="dl" href="{{ f.dl }}">Download</a>
+      </div>
+      {% endfor %}
+      {% if count > 1 %}<a class="all" href="{{ zip_url }}">Download all as .zip</a>{% endif %}
+    {% endif %}
+  </div>
+  <div class="foot">Only the shared file{{ 's' if count != 1 else '' }} above are accessible through this link.</div>
+</body>
+</html>

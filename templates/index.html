@@ -145,6 +145,7 @@
           <b style="font-size:13px;color:var(--signal)">{{ selCountText }}</b>
           <span style="flex:1 1 auto"></span>
           <button onclick="{{ bulkLabel }}" style="display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--paper);color:var(--ink);font-size:12.5px;padding:7px 13px;border-radius:999px;cursor:pointer" style-hover="border-color:var(--signal);color:var(--signal)">Label…</button>
+          <button onclick="{{ bulkShare }}" style="display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--paper);color:var(--ink);font-size:12.5px;padding:7px 13px;border-radius:999px;cursor:pointer" style-hover="border-color:var(--signal);color:var(--signal)">Share link</button>
           <button onclick="{{ bulkZip }}" style="display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--paper);color:var(--ink);font-size:12.5px;padding:7px 13px;border-radius:999px;cursor:pointer" style-hover="border-color:var(--signal);color:var(--signal)">Download as zip</button>
           <button onclick="{{ bulkDelete }}" disabled="{{ anySelected }}" style="display:inline-flex;align-items:center;gap:6px;border:1px solid color-mix(in srgb,var(--pop) 50%,transparent);background:color-mix(in srgb,var(--pop) 12%,transparent);color:var(--pop);font-size:12.5px;padding:7px 13px;border-radius:999px;cursor:pointer">Delete selected</button>
         </div>
@@ -717,6 +718,42 @@ x11vnc -display :0 -localhost \
     post("/api/label",{ids, label}).then(()=>{ toast(label?("Labelled “"+label+"”"):"Labels cleared"); setState({selecting:false, selected:{}}); loadState(); });
   }
   function setLabelFilter(l){ setState({labelFilter: state.labelFilter===l ? "" : l}); }
+  function makeShare(ids){
+    ids=(ids||[]).filter(Boolean);
+    if(!ids.length){ toast("Select files to share"); return; }
+    const wrap=document.createElement("div");
+    wrap.style.cssText="position:fixed;inset:0;background:rgba(10,18,28,.5);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);display:grid;place-items:center;padding:20px;z-index:120";
+    wrap.onclick=e=>{ if(e.target===wrap) wrap.remove(); };
+    wrap.innerHTML='<div style="background:var(--paper-solid);border:1px solid var(--line);border-radius:18px;padding:22px;width:370px;max-width:92vw;box-shadow:var(--shadow)">'
+      +'<h3 style="margin:0 0 4px;font-size:17px">Share '+ids.length+' file'+(ids.length>1?"s":"")+'</h3>'
+      +'<p style="margin:0 0 16px;color:var(--ink-soft);font-size:13px">Anyone with the link can download only '+(ids.length>1?"these files":"this file")+', nothing else.</p>'
+      +'<label style="display:flex;align-items:center;gap:9px;font-size:14px;margin-bottom:10px;cursor:pointer"><input type="radio" name="sm" value="public" checked style="width:16px;height:16px"> Public — no password</label>'
+      +'<label style="display:flex;align-items:center;gap:9px;font-size:14px;cursor:pointer"><input type="radio" name="sm" value="pin" style="width:16px;height:16px"> Private — needs a PIN</label>'
+      +'<input id="sm-pin" type="text" autocomplete="off" placeholder="Set a PIN (3-32 characters)" style="width:100%;font-size:14px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--ink);box-sizing:border-box;display:none;margin:8px 0 0">'
+      +'<div style="display:flex;gap:8px;margin-top:16px"><button id="sm-go" style="flex:1;border:0;background:var(--signal);color:#06231f;font-weight:600;padding:11px;border-radius:11px;cursor:pointer">Create link</button><button id="sm-x" style="border:1px solid var(--line);background:transparent;color:var(--ink);padding:11px 14px;border-radius:11px;cursor:pointer">Cancel</button></div>'
+      +'<div id="sm-out" style="margin-top:12px"></div></div>';
+    document.body.appendChild(wrap);
+    const pin=wrap.querySelector("#sm-pin");
+    wrap.querySelectorAll('input[name=sm]').forEach(r=>r.onchange=()=>{ const on=wrap.querySelector('input[name=sm]:checked').value==="pin"; pin.style.display=on?"block":"none"; if(on) pin.focus(); });
+    wrap.querySelector("#sm-x").onclick=()=>wrap.remove();
+    wrap.querySelector("#sm-go").onclick=async()=>{
+      const mode=wrap.querySelector('input[name=sm]:checked').value;
+      const pv=mode==="pin"?pin.value.trim():"";
+      if(mode==="pin" && (pv.length<3||pv.length>32)){ pin.style.outline="2px solid var(--pop)"; pin.focus(); return; }
+      try{
+        const d=await post("/api/share",{ids,pin:pv}).then(r=>r.json());
+        if(!d.ok){ wrap.querySelector("#sm-out").innerHTML='<span style="color:var(--pop);font-size:13px">'+(d.error||"Couldn't create link")+'</span>'; return; }
+        const url=location.origin+d.url;
+        try{ await navigator.clipboard.writeText(url); }catch(_){}
+        wrap.querySelector("#sm-out").innerHTML='<div style="font-size:12px;color:var(--ink-soft);margin-bottom:5px">'+(d.public?"Public link":"Private link · PIN: "+pv)+' — copied</div>'
+          +'<input readonly onclick="this.select()" style="width:100%;font-size:12.5px;padding:9px 11px;border:1px solid var(--signal);border-radius:9px;background:transparent;color:var(--ink);box-sizing:border-box;font-family:ui-monospace,Menlo,monospace">';
+        wrap.querySelector("#sm-out input").value=url;
+        toast(d.public?"Public link created & copied":"Private link created & copied");
+        loadState();
+      }catch(e){ toast("Couldn't create link"); }
+    };
+  }
+  function bulkShare(){ const fids=Object.keys(state.selected).filter(k=>k.indexOf("file:")===0).map(k=>k.slice(5)); makeShare(fids); }
   function bulkZip(){
     const fids=Object.keys(state.selected).filter(k=>k.indexOf("file:")===0).map(k=>k.slice(5));
     if(!fids.length){ toast("Select some files first"); return; }
@@ -815,7 +852,7 @@ x11vnc -display :0 -localhost \
         openHandler:()=> s.selecting ? toggleSelect(key) : (it.kind==="file" ? openPreview(it) : null),
         selectHandler:(e)=>{ e.stopPropagation(); toggleSelect(key); },
         pinHandler:(e)=>{ e.stopPropagation(); pinItem(it.id, it.kind); },
-        shareHandler:(e)=>{ e.stopPropagation(); copyShare(it.share_url); },
+        shareHandler:(e)=>{ e.stopPropagation(); makeShare([it.id]); },
         copyHandler:(e)=>{ e.stopPropagation(); copyText(it.content); },
         revealHandler:(e)=>{ e.stopPropagation(); revealBurn(it.id); },
         delHandler:(e)=>{ e.stopPropagation(); deleteItem(it.id, it.kind); },
@@ -910,7 +947,7 @@ x11vnc -display :0 -localhost \
       selecting:s.selecting, notSelecting:!s.selecting, toggleSelecting,
       selectLabel: s.selecting?"Done":"Select",
       selCountText: selCount()+" selected", anySelected:selCount()>0,
-      bulkDelete, bulkZip,
+      bulkDelete, bulkZip, bulkShare,
       query:s.query, onSearch,
       chatDraft:s.chatDraft, onChatInput, onChatKey, sendChat, chatDisabled:!s.chatDraft.trim(),
       toggleTheme, openQR, closeQR, onQrBackdrop, doLogout, changePassword,

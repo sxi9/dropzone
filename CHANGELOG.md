@@ -34,6 +34,10 @@ All notable changes to this project are documented here.
 - Stray "[object Object]" next to the burn-after-read chip.
 - **Copy buttons on notes and share links** now work over plain HTTP on the LAN. The Clipboard API is only available in secure contexts (HTTPS or localhost), so the old code silently did nothing while still showing "Copied". Added an `execCommand("copy")` fallback and an honest toast when the browser blocks copying.
 
+### Shareable links
+- Share one file or a bunch of selected files with a link. **Public** links let anyone download with no password; **private** links need a PIN you set. Either way the link exposes only those files, nothing else in the app.
+- Per-file "Share" button and a "Share link" action in multi-select, each opening a public/PIN chooser that copies the link. The recipient sees a clean download page (and a zip-all for multiple files). Admins/owners can list and revoke links (/api/share, /api/shares). Download perm required to create a link.
+
 ### Uploads
 - The upload progress is now a small corner card instead of a full-screen overlay, so you can keep browsing and checking files while files go up.
 - The person a file is sent to (or everyone, for an untargeted share) sees the incoming file's live progress.
