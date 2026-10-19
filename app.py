@@ -396,6 +396,11 @@ def purge_expired(conn):
     if conn.execute(f"SELECT COUNT(*) c FROM notes WHERE {where}", args).fetchone()["c"]:
         changed = True
     conn.execute(f"DELETE FROM notes WHERE {where}", args)
+    # v7: timed share links die with their deadline (the link answers 404 from
+    # that second regardless; this just keeps the table and the panel tidy).
+    if conn.execute("SELECT COUNT(*) c FROM shares WHERE expires IS NOT NULL AND expires < ?", (now,)).fetchone()["c"]:
+        conn.execute("DELETE FROM shares WHERE expires IS NOT NULL AND expires < ?", (now,))
+        changed = True
     if changed: bump()
 
 def visible(row, me):
@@ -609,6 +614,7 @@ def api_state():
 
         see_all = admin or user.get("perms", {}).get("see_all", True)
         uname = user["name"]
+        shared = _share_index(conn)        # file id -> active links it is in (v7)
         def _owns(r):
             try: ou = r["owner_user"]
             except (KeyError, IndexError): ou = None
@@ -627,6 +633,13 @@ def api_state():
                           "target":r["target_ip"] or "", "mine_target":bool(r["target_ip"]) and r["target_ip"]==me,
                           "mine":mine, "can_delete":admin or (mine and user.get("perms",{}).get("delete",True)),
                           "share_url":url_for("share_page", token=r["token"], _external=False) if r["token"] else "",
+                          # v7: which active links carry this file. `public` = in a
+                          # no-PIN link right now; `public_until` = the soonest deadline
+                          # among those (null = at least one never expires).
+                          "public": any(l["public"] for l in shared.get(r["id"], [])),
+                          "pin_shared": any(not l["public"] for l in shared.get(r["id"], [])),
+                          "public_until": _soonest([l["expires"] for l in shared.get(r["id"], []) if l["public"]]),
+                          "links": shared.get(r["id"], []),
                           "raw_url":url_for("file_raw", item_id=r["id"]),
                           "download_url":url_for("file_download", item_id=r["id"])})
         for r in conn.execute("SELECT * FROM notes ORDER BY pinned DESC, created DESC").fetchall():
@@ -1718,6 +1731,29 @@ def _get_share(token):
     if rec["expires"] and time.time() > rec["expires"]: return None
     return rec
 
+def _soonest(deadlines):
+    """Soonest deadline of a set of links; None when any link never expires (or the set is empty)."""
+    if not deadlines or any(d is None for d in deadlines): return None
+    return min(deadlines)
+
+def _share_index(conn):
+    """file id -> [{token, public, expires}] over every ACTIVE link (expired ones are purged on read)."""
+    now = time.time(); out = {}
+    for r in conn.execute("SELECT token, ids, pin_hash, expires FROM shares").fetchall():
+        if r["expires"] and r["expires"] < now: continue
+        try: ids = json.loads(r["ids"])
+        except (ValueError, TypeError): ids = []
+        for fid in ids:
+            out.setdefault(fid, []).append({"token": r["token"], "public": not r["pin_hash"], "expires": r["expires"]})
+    return out
+
+def _parse_expires_in(value):
+    """Seconds from now for a link deadline: 0/None/'' = never; else clamped to [1 minute, 1 year]."""
+    try: n = int(float(value or 0))
+    except (TypeError, ValueError): n = 0
+    if n <= 0: return None
+    return time.time() + min(max(n, 60), 365*86400)
+
 def _share_files(rec):
     try: ids = json.loads(rec["ids"])
     except (ValueError, TypeError): ids = []
@@ -1751,15 +1787,77 @@ def api_share_create():
     salt = secrets.token_bytes(16) if pin else b""
     pin_hash = _hash_password(pin, salt, PBKDF2_ITERATIONS) if pin else ""
     label = (d.get("label") or "").strip()[:60]
+    expires = _parse_expires_in(d.get("expires_in"))   # v7: timed links
     with db() as conn:
         conn.execute("""INSERT INTO shares (token,ids,pin_hash,pin_salt,pin_iter,created,owner_user,owner_ip,expires,downloads,label)
                         VALUES (?,?,?,?,?,?,?,?,?,0,?)""",
                      (token, json.dumps(good), pin_hash, salt.hex(), PBKDF2_ITERATIONS, time.time(),
-                      current_user()["name"], me, None, label))
+                      current_user()["name"], me, expires, label))
         who = touch_device(conn)
-        log_activity(conn, "link", f"{who} made a {'PIN-protected' if pin else 'public'} share link ({len(good)} file{'s' if len(good)!=1 else ''})", me)
+        log_activity(conn, "link", f"{who} made a {'PIN-protected' if pin else 'public'} share link ({len(good)} file{'s' if len(good)!=1 else ''}"
+                                   + (f", expires in {_fmt_span(expires - time.time())}" if expires else "") + ")", me)
     bump()
-    return jsonify(ok=True, token=token, url=url_for("share_page", token=token, _external=False), public=not pin, count=len(good))
+    return jsonify(ok=True, token=token, url=url_for("share_page", token=token, _external=False), public=not pin, count=len(good), expires=expires)
+
+def _fmt_span(secs):
+    secs = max(0, int(secs))
+    if secs < 3600: return f"{max(1, secs // 60)} min"
+    if secs < 86400: return f"{secs // 3600} h"
+    return f"{secs // 86400} d"
+
+def _owned_share(conn, token):
+    """The share row when it exists and the caller may manage it (owner, or any admin); else (None, response)."""
+    r = conn.execute("SELECT * FROM shares WHERE token=?", (token,)).fetchone()
+    if not r: return None, (jsonify(error="no such share"), 404)
+    if not is_admin() and r["owner_user"] != current_user()["name"]:
+        return None, (jsonify(error="not your share"), 403)
+    return r, None
+
+@app.route("/api/share/<token>/expires", methods=["POST"])
+@require_auth
+def api_share_expires(token):
+    """v7: change a link's deadline — expires_in seconds from now, 0 = never."""
+    d = request.json or {}
+    with db() as conn:
+        r, err = _owned_share(conn, token)
+        if err: return err
+        expires = _parse_expires_in(d.get("expires_in"))
+        conn.execute("UPDATE shares SET expires=? WHERE token=?", (expires, token))
+    bump()
+    return jsonify(ok=True, token=token, expires=expires)
+
+@app.route("/api/unshare", methods=["POST"])
+@require_auth
+def api_unshare():
+    """v7: pull files out of share links. scope 'public' (default) touches only no-PIN
+    links, 'all' every link. Links that end up empty are deleted. Non-admins only
+    edit their own links; files inside other people's links stay shared."""
+    d = request.json or {}
+    ids = d.get("ids") or []
+    if isinstance(ids, str): ids = [ids]
+    ids = set(str(i) for i in ids[:500])
+    scope = d.get("scope") or "public"
+    if not ids: return jsonify(error="nothing selected"), 400
+    me = current_user()["name"]; admin = is_admin(); ip = client_ip()
+    removed = 0; dropped = 0; touched = 0
+    with db() as conn:
+        for r in conn.execute("SELECT token, ids, pin_hash, owner_user FROM shares").fetchall():
+            if not admin and r["owner_user"] != me: continue
+            if scope == "public" and r["pin_hash"]: continue
+            try: cur = json.loads(r["ids"])
+            except (ValueError, TypeError): cur = []
+            keep = [x for x in cur if x not in ids]
+            if len(keep) == len(cur): continue
+            removed += len(cur) - len(keep); touched += 1
+            if keep:
+                conn.execute("UPDATE shares SET ids=? WHERE token=?", (json.dumps(keep), r["token"]))
+            else:
+                conn.execute("DELETE FROM shares WHERE token=?", (r["token"],)); dropped += 1
+        if removed:
+            who = touch_device(conn)
+            log_activity(conn, "trash", f"{who} removed {removed} file{'s' if removed != 1 else ''} from {'public' if scope == 'public' else 'share'} links", ip)
+    bump()
+    return jsonify(ok=True, removed=removed, links_touched=touched, links_deleted=dropped)
 
 @app.route("/api/shares")
 @require_auth
@@ -1773,9 +1871,11 @@ def api_shares_list():
             try: ids = json.loads(r["ids"])
             except (ValueError, TypeError): ids = []
             names = [x["name"] for x in (conn.execute("SELECT name FROM files WHERE id=?", (i,)).fetchone() for i in ids) if x]
+            if r["expires"] and r["expires"] < time.time(): continue   # v7: dead links never list
             out.append({"token": r["token"], "url": url_for("share_page", token=r["token"], _external=False),
-                        "public": not r["pin_hash"], "count": len(ids), "names": names[:8],
-                        "created": r["created"], "owner": r["owner_user"], "downloads": r["downloads"], "label": r["label"] or ""})
+                        "public": not r["pin_hash"], "count": len(ids), "names": names[:8], "ids": ids,
+                        "created": r["created"], "owner": r["owner_user"], "downloads": r["downloads"], "label": r["label"] or "",
+                        "expires": r["expires"]})
     return jsonify(shares=out)
 
 @app.route("/api/share/<token>", methods=["DELETE"])

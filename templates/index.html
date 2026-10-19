@@ -123,7 +123,9 @@
           <button onclick="{{ filterFile }}" style="{{ pillFile }}">Files</button>
           <button onclick="{{ filterImage }}" style="{{ pillImage }}">Photos</button>
           <button onclick="{{ filterNote }}" style="{{ pillNote }}">Text</button>
+          <button onclick="{{ filterPublic }}" style="{{ pillPublic }}" title="Files that are in a public link right now">Public</button>
         </div>
+        <button onclick="{{ openShares }}" title="Every share link you made: who can reach what, until when" style="display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--paper);backdrop-filter:var(--glass);-webkit-backdrop-filter:var(--glass);color:var(--ink);font-size:13px;padding:8px 14px;border-radius:999px;cursor:pointer" style-hover="border-color:var(--signal);color:var(--signal)"><span style="display:inline-flex">{{ linkIcon }}</span>Links</button>
         <button onclick="{{ toggleSelecting }}" style="border:1px solid var(--line);background:var(--paper);backdrop-filter:var(--glass);-webkit-backdrop-filter:var(--glass);color:var(--ink);font-size:13px;padding:8px 14px;border-radius:999px;cursor:pointer" style-hover="border-color:var(--signal);color:var(--signal)">{{ selectLabel }}</button>
         <div style="flex:1;min-width:140px;display:flex;align-items:center;gap:8px;background:var(--paper);backdrop-filter:var(--glass);-webkit-backdrop-filter:var(--glass);border:1px solid var(--line);border-radius:999px;padding:8px 14px" style-focus-within="border-color:var(--signal)">
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--ink-soft)" stroke-width="2" style="flex:none"><circle cx="11" cy="11" r="7"></circle><path d="m21 21-4.3-4.3"></path></svg>
@@ -147,6 +149,7 @@
           <button onclick="{{ bulkLabel }}" style="display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--paper);color:var(--ink);font-size:12.5px;padding:7px 13px;border-radius:999px;cursor:pointer" style-hover="border-color:var(--signal);color:var(--signal)">Label…</button>
           <button onclick="{{ bulkShare }}" style="display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--paper);color:var(--ink);font-size:12.5px;padding:7px 13px;border-radius:999px;cursor:pointer" style-hover="border-color:var(--signal);color:var(--signal)">Share link</button>
           <button onclick="{{ bulkZip }}" style="display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--paper);color:var(--ink);font-size:12.5px;padding:7px 13px;border-radius:999px;cursor:pointer" style-hover="border-color:var(--signal);color:var(--signal)">Download as zip</button>
+          <button onclick="{{ bulkUnshare }}" title="Take the selected files out of every public link" style="display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--paper);color:var(--ink);font-size:12.5px;padding:7px 13px;border-radius:999px;cursor:pointer" style-hover="border-color:var(--pop);color:var(--pop)">Stop public</button>
           <button onclick="{{ bulkDelete }}" disabled="{{ anySelected }}" style="display:inline-flex;align-items:center;gap:6px;border:1px solid color-mix(in srgb,var(--pop) 50%,transparent);background:color-mix(in srgb,var(--pop) 12%,transparent);color:var(--pop);font-size:12.5px;padding:7px 13px;border-radius:999px;cursor:pointer">Delete selected</button>
         </div>
       </sc-if>
@@ -216,8 +219,14 @@
                   <span style="display:block;font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="{{ it.name }}">{{ it.name }}</span>
                   <span style="font-size:11.5px;color:var(--ink-soft)">{{ it.sizeText }} · {{ it.whenText }}<sc-if value="{{ it.hasLabel }}"> · <span style="color:var(--signal)">{{ it.label }}</span></sc-if></span>
                 </span>
+                <sc-if value="{{ it.isPublic }}">
+                  <button onclick="{{ it.publicHandler }}" title="{{ it.publicTitle }}" style="font-family:ui-monospace,Menlo,monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#06231f;background:var(--signal);border:0;padding:3px 8px;border-radius:999px;cursor:pointer;flex:none">public</button>
+                </sc-if>
+                <sc-if value="{{ it.isPinShared }}">
+                  <button onclick="{{ it.publicHandler }}" title="In a PIN-protected link" style="font-family:ui-monospace,Menlo,monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--signal);background:transparent;border:1px solid color-mix(in srgb,var(--signal) 45%,transparent);padding:2px 7px;border-radius:999px;cursor:pointer;flex:none">pin</button>
+                </sc-if>
                 <sc-if value="{{ it.hasShare }}">
-                  <button onclick="{{ it.shareHandler }}" title="Copy share link" style="border:0;background:transparent;color:var(--ink-soft);cursor:pointer;padding:5px;border-radius:8px;display:inline-flex" style-hover="color:var(--signal);background:var(--paper-2)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"></path><path d="M16 6l-4-4-4 4"></path><path d="M12 2v13"></path></svg></button>
+                  <button onclick="{{ it.shareHandler }}" title="Make a share link" style="border:0;background:transparent;color:var(--ink-soft);cursor:pointer;padding:5px;border-radius:8px;display:inline-flex" style-hover="color:var(--signal);background:var(--paper-2)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"></path><path d="M16 6l-4-4-4 4"></path><path d="M12 2v13"></path></svg></button>
                 </sc-if>
                 <sc-if value="{{ it.canDownload }}"><a href="{{ it.downHref }}" onclick="{{ it.stop }}" title="Download" style="border:0;background:transparent;color:var(--ink-soft);cursor:pointer;padding:5px;border-radius:8px;display:inline-flex" style-hover="color:var(--signal);background:var(--paper-2)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 4v12M7 11l5 5 5-5M5 20h14"></path></svg></a></sc-if>
                 <sc-if value="{{ it.canDelete }}">
@@ -387,6 +396,32 @@ x11vnc -display :0 -localhost \
     </div>
   </div>
 </sc-if>
+<sc-if value="{{ sharesOpen }}">
+  <div onclick="{{ onSharesBackdrop }}" style="position:fixed;inset:0;background:rgba(10,18,28,.5);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);display:grid;place-items:center;padding:20px;z-index:110">
+    <div style="background:var(--paper-solid);border:1px solid var(--line);border-radius:18px;padding:22px;width:560px;max-width:94vw;max-height:86vh;overflow:auto;box-shadow:var(--shadow)">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+        <h3 style="margin:0;font-size:17px;flex:1">Share links</h3>
+        <button onclick="{{ closeShares }}" style="border:1px solid var(--line);background:transparent;color:var(--ink);padding:7px 12px;border-radius:999px;cursor:pointer">Close</button>
+      </div>
+      <p style="margin:0 0 14px;color:var(--ink-soft);font-size:13px">Every link that is live right now. Public ones need no PIN. Ending a link or letting it expire makes the files private again; the files themselves stay.</p>
+      <sc-if value="{{ sharesLoading }}"><div style="color:var(--ink-soft);font-size:13px;padding:16px 0">Loading…</div></sc-if>
+      <sc-if value="{{ noShares }}"><div style="color:var(--ink-soft);font-size:13px;padding:16px 0">No live links. Select files and press “Share link” to make one.</div></sc-if>
+      <sc-for list="{{ shareRows }}" as="sh">
+        <div style="display:flex;align-items:center;gap:10px;padding:11px 0;border-top:1px solid var(--line-soft);flex-wrap:wrap">
+          <span style="font-family:ui-monospace,Menlo,monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:2px 7px;border-radius:999px;{{ sh.badgeStyle }}">{{ sh.badge }}</span>
+          <span style="flex:1;min-width:160px">
+            <span style="display:block;font-size:13.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ sh.title }}</span>
+            <span style="display:block;font-size:11.5px;color:var(--ink-soft)">{{ sh.meta }}</span>
+            <span style="display:block;font-size:11.5px;color:{{ sh.expiresColor }}">{{ sh.expiresText }}</span>
+          </span>
+          <select ref="{{ sh.initExpiry }}" style="border:1px solid var(--line);background:var(--paper-2);color:var(--ink);font-size:12px;padding:5px 9px;border-radius:999px;outline:none;cursor:pointer"></select>
+          <button onclick="{{ sh.copyHandler }}" style="border:1px solid var(--line);background:transparent;color:var(--ink);font-size:12px;padding:6px 11px;border-radius:999px;cursor:pointer" style-hover="border-color:var(--signal);color:var(--signal)">Copy</button>
+          <button onclick="{{ sh.revokeHandler }}" style="border:1px solid color-mix(in srgb,var(--pop) 50%,transparent);background:color-mix(in srgb,var(--pop) 12%,transparent);color:var(--pop);font-size:12px;padding:6px 11px;border-radius:999px;cursor:pointer">End link</button>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+</sc-if>
 <sc-for list="{{ incoming }}" as="inc">
   <div style="background:var(--paper-solid);border:1px solid color-mix(in srgb,var(--pop) 35%,var(--line));border-radius:16px;padding:12px 14px;box-shadow:var(--shadow);width:300px;max-width:88vw;animation:dzRise .25s ease both">
     <div style="display:flex;align-items:center;gap:10px">
@@ -509,6 +544,7 @@ x11vnc -display :0 -localhost \
     preview:null, previewText:"",
     noteBurn:false, noteExpire:false, target:"",
     recording:false, renaming:null, renameDraft:"", labelFilter:"", screen:null, storageOpen:false,
+    sharesOpen:false, shares:null,
   };
   let fileInputEl=null, chatScrollEl=null, qrNonce=0, toastTimer=null, raf=null, lastSig="";
   let mediaRecorder=null, recChunks=[], sse=null, pollTimer=null;
@@ -730,6 +766,8 @@ x11vnc -display :0 -localhost \
       +'<label style="display:flex;align-items:center;gap:9px;font-size:14px;margin-bottom:10px;cursor:pointer"><input type="radio" name="sm" value="public" checked style="width:16px;height:16px"> Public — no password</label>'
       +'<label style="display:flex;align-items:center;gap:9px;font-size:14px;cursor:pointer"><input type="radio" name="sm" value="pin" style="width:16px;height:16px"> Private — needs a PIN</label>'
       +'<input id="sm-pin" type="text" autocomplete="off" placeholder="Set a PIN (3-32 characters)" style="width:100%;font-size:14px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--ink);box-sizing:border-box;display:none;margin:8px 0 0">'
+      +'<label style="display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13px;margin-top:14px;color:var(--ink-soft)">Link works for'
+      +'<select id="sm-exp" style="border:1px solid var(--line);background:var(--paper-2);color:var(--ink);font-size:13px;padding:6px 10px;border-radius:999px;outline:none;cursor:pointer">'+EXPIRY_OPTIONS.map(o=>'<option value="'+o.v+'"'+(o.v===604800?' selected':'')+'>'+o.l+'</option>').join("")+'</select></label>'
       +'<div style="display:flex;gap:8px;margin-top:16px"><button id="sm-go" style="flex:1;border:0;background:var(--signal);color:#06231f;font-weight:600;padding:11px;border-radius:11px;cursor:pointer">Create link</button><button id="sm-x" style="border:1px solid var(--line);background:transparent;color:var(--ink);padding:11px 14px;border-radius:11px;cursor:pointer">Cancel</button></div>'
       +'<div id="sm-out" style="margin-top:12px"></div></div>';
     document.body.appendChild(wrap);
@@ -741,11 +779,12 @@ x11vnc -display :0 -localhost \
       const pv=mode==="pin"?pin.value.trim():"";
       if(mode==="pin" && (pv.length<3||pv.length>32)){ pin.style.outline="2px solid var(--pop)"; pin.focus(); return; }
       try{
-        const d=await post("/api/share",{ids,pin:pv}).then(r=>r.json());
+        const expires_in=parseInt(wrap.querySelector("#sm-exp").value,10)||0;
+        const d=await post("/api/share",{ids,pin:pv,expires_in}).then(r=>r.json());
         if(!d.ok){ wrap.querySelector("#sm-out").innerHTML='<span style="color:var(--pop);font-size:13px">'+(d.error||"Couldn't create link")+'</span>'; return; }
         const url=location.origin+d.url;
         try{ await navigator.clipboard.writeText(url); }catch(_){}
-        wrap.querySelector("#sm-out").innerHTML='<div style="font-size:12px;color:var(--ink-soft);margin-bottom:5px">'+(d.public?"Public link":"Private link · PIN: "+pv)+' — copied</div>'
+        wrap.querySelector("#sm-out").innerHTML='<div style="font-size:12px;color:var(--ink-soft);margin-bottom:5px">'+(d.public?"Public link":"Private link · PIN: "+pv)+(d.expires?" · expires "+fmtUntil(d.expires):" · never expires")+' — copied</div>'
           +'<input readonly onclick="this.select()" style="width:100%;font-size:12.5px;padding:9px 11px;border:1px solid var(--signal);border-radius:9px;background:transparent;color:var(--ink);box-sizing:border-box;font-family:ui-monospace,Menlo,monospace">';
         wrap.querySelector("#sm-out input").value=url;
         toast(d.public?"Public link created & copied":"Private link created & copied");
@@ -754,6 +793,67 @@ x11vnc -display :0 -localhost \
     };
   }
   function bulkShare(){ const fids=Object.keys(state.selected).filter(k=>k.indexOf("file:")===0).map(k=>k.slice(5)); makeShare(fids); }
+
+  // ---------------------------------------------------------------- v7: public-link management
+  const EXPIRY_OPTIONS=[{v:3600,l:"1 hour"},{v:86400,l:"1 day"},{v:604800,l:"7 days"},{v:2592000,l:"30 days"},{v:0,l:"forever"}];
+  function fmtUntil(ts){
+    if(!ts) return "never";
+    const d=ts-Date.now()/1000;
+    if(d<=0) return "now";
+    if(d<3600) return "in "+Math.max(1,Math.round(d/60))+" min";
+    if(d<86400) return "in "+Math.round(d/3600)+" h";
+    if(d<86400*14) return "in "+Math.round(d/86400)+" d";
+    return "on "+new Date(ts*1000).toLocaleDateString(undefined,{month:"short",day:"numeric"});
+  }
+  function unshare(ids, scope, done){
+    post("/api/unshare",{ids, scope:scope||"public"}).then(r=>r.json()).then(d=>{
+      if(!d.ok){ toast(d.error||"Couldn't change links"); return; }
+      toast(d.removed ? ("Removed from "+d.links_touched+" link"+(d.links_touched!==1?"s":"")+(d.links_deleted?" · "+d.links_deleted+" link"+(d.links_deleted!==1?"s":"")+" ended":"")) : "Nothing to remove (not your link?)");
+      loadState(); if(done) done();
+    }).catch(()=>toast("Couldn't change links"));
+  }
+  function bulkUnshare(){
+    const fids=Object.keys(state.selected).filter(k=>k.indexOf("file:")===0).map(k=>k.slice(5));
+    if(!fids.length){ toast("Select some files first"); return; }
+    if(!window.confirm("Take "+fids.length+" file"+(fids.length>1?"s":"")+" out of every public link? Private (PIN) links are kept.")) return;
+    unshare(fids, "public", ()=>setState({selecting:false, selected:{}}));
+  }
+  function publicMenu(it){
+    const links=(it.links||[]);
+    const wrap=document.createElement("div");
+    wrap.style.cssText="position:fixed;inset:0;background:rgba(10,18,28,.5);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);display:grid;place-items:center;padding:20px;z-index:120";
+    wrap.onclick=e=>{ if(e.target===wrap) wrap.remove(); };
+    const rows=links.map(l=>'<div style="display:flex;align-items:center;gap:8px;padding:9px 0;border-top:1px solid var(--line-soft)">'
+      +'<span style="font-family:ui-monospace,Menlo,monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:2px 7px;border-radius:999px;'+(l.public?"color:#06231f;background:var(--signal)":"color:var(--signal);border:1px solid color-mix(in srgb,var(--signal) 45%,transparent)")+'">'+(l.public?"public":"pin")+'</span>'
+      +'<span style="flex:1;font-size:12.5px;color:var(--ink-soft)">expires '+esc(fmtUntil(l.expires))+'</span>'
+      +'<button data-copy="'+esc(l.token)+'" style="border:1px solid var(--line);background:transparent;color:var(--ink);font-size:12px;padding:5px 10px;border-radius:999px;cursor:pointer">Copy link</button></div>').join("");
+    wrap.innerHTML='<div style="background:var(--paper-solid);border:1px solid var(--line);border-radius:18px;padding:22px;width:400px;max-width:92vw;box-shadow:var(--shadow)">'
+      +'<h3 style="margin:0 0 4px;font-size:17px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(it.name)+'</h3>'
+      +'<p style="margin:0 0 10px;color:var(--ink-soft);font-size:13px">In '+links.length+' link'+(links.length!==1?"s":"")+'. Anyone holding a public link can download this file until it expires.</p>'
+      +rows
+      +'<div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">'
+      +(it.public?'<button id="pm-stop" style="flex:1;border:1px solid color-mix(in srgb,var(--pop) 50%,transparent);background:color-mix(in srgb,var(--pop) 12%,transparent);color:var(--pop);font-weight:600;padding:10px;border-radius:11px;cursor:pointer">Stop sharing publicly</button>':'')
+      +'<button id="pm-all" style="flex:1;border:1px solid var(--line);background:transparent;color:var(--ink);padding:10px;border-radius:11px;cursor:pointer">Remove from all links</button>'
+      +'<button id="pm-x" style="border:1px solid var(--line);background:transparent;color:var(--ink);padding:10px 14px;border-radius:11px;cursor:pointer">Close</button></div></div>';
+    document.body.appendChild(wrap);
+    wrap.querySelectorAll("[data-copy]").forEach(b=>b.onclick=()=>copyText(location.origin+"/s/"+b.getAttribute("data-copy"), "Link copied"));
+    wrap.querySelector("#pm-x").onclick=()=>wrap.remove();
+    const stop=wrap.querySelector("#pm-stop"); if(stop) stop.onclick=()=>unshare([it.id],"public",()=>wrap.remove());
+    wrap.querySelector("#pm-all").onclick=()=>{ if(window.confirm("Remove this file from every link you made, PIN ones too?")) unshare([it.id],"all",()=>wrap.remove()); };
+  }
+  function openShares(){
+    setState({sharesOpen:true, shares:null});
+    fetch("/api/shares").then(r=>r.json()).then(d=>setState({shares:d.shares||[]})).catch(()=>setState({shares:[]}));
+  }
+  function closeShares(){ setState({sharesOpen:false}); }
+  function onSharesBackdrop(e){ if(e.target===e.currentTarget) closeShares(); }
+  function revokeShare(token){
+    if(!window.confirm("End this link? Everyone who has it loses access right away.")) return;
+    fetch("/api/share/"+token,{method:"DELETE"}).then(r=>r.json()).then(d=>{ if(d.ok){ toast("Link ended"); openShares(); loadState(); } else toast(d.error||"Couldn't end link"); }).catch(()=>toast("Couldn't end link"));
+  }
+  function setShareExpiry(token, expires_in){
+    post("/api/share/"+token+"/expires",{expires_in}).then(r=>r.json()).then(d=>{ if(d.ok){ toast(d.expires?"Now expires "+fmtUntil(d.expires):"Link never expires"); openShares(); loadState(); } else toast(d.error||"Couldn't change expiry"); }).catch(()=>toast("Couldn't change expiry"));
+  }
   function bulkZip(){
     const fids=Object.keys(state.selected).filter(k=>k.indexOf("file:")===0).map(k=>k.slice(5));
     if(!fids.length){ toast("Select some files first"); return; }
@@ -830,6 +930,7 @@ x11vnc -display :0 -localhost \
       if(s.filter==="file"  && it.kind!=="file") return false;
       if(s.filter==="note"  && it.kind!=="note") return false;
       if(s.filter==="image" && !(it.kind==="file" && it.is_image)) return false;
+      if(s.filter==="public" && !(it.kind==="file" && it.public)) return false;
       if(s.labelFilter && (it.label||"")!==s.labelFilter) return false;
       if(!q) return true;
       const hay=(it.kind==="note"?(it.content||""):it.name)||""; return hay.toLowerCase().includes(q);
@@ -847,6 +948,9 @@ x11vnc -display :0 -localhost \
         pinned:!!it.pinned, pinColor: it.pinned?"var(--pop)":"var(--ink-soft)",
         forYou:!!it.mine_target, targeted:!!it.target,
         hasShare:(!!it.share_url && (s.admin||p.download!==false)), canDelete:!!it.can_delete, canDownload:(s.admin||p.download!==false),
+        isPublic:!!it.public, isPinShared:(!it.public && !!it.pin_shared),
+        publicTitle: it.public ? ("Public link · "+(it.public_until?("expires "+fmtUntil(it.public_until)):"never expires")+" — tap to manage") : "",
+        publicHandler:(e)=>{ e.stopPropagation(); publicMenu(it); },
         selecting:s.selecting, checked:!!s.selected[key],
         checkBg: s.selected[key]?"var(--signal)":"color-mix(in srgb,var(--paper-solid) 80%,transparent)",
         openHandler:()=> s.selecting ? toggleSelect(key) : (it.kind==="file" ? openPreview(it) : null),
@@ -922,6 +1026,21 @@ x11vnc -display :0 -localhost \
       netTag: s.remote ? "remote · via secure tunnel" : "local · private · this network only",
       pillAll:pillStyle(s.filter==="all"), pillFile:pillStyle(s.filter==="file"), pillNote:pillStyle(s.filter==="note"), pillImage:pillStyle(s.filter==="image"),
       filterAll:()=>setFilter("all"), filterFile:()=>setFilter("file"), filterNote:()=>setFilter("note"), filterImage:()=>setFilter("image"),
+      pillPublic:pillStyle(s.filter==="public"), filterPublic:()=>setFilter("public"),
+      linkIcon:{__html:svg("share",14)}, openShares, closeShares, onSharesBackdrop,
+      sharesOpen:s.sharesOpen, sharesLoading:s.sharesOpen && s.shares===null,
+      shareRows:(s.shares||[]).map(sh=>({
+        badge: sh.public?"public":"pin",
+        badgeStyle: sh.public?"color:#06231f;background:var(--signal)":"color:var(--signal);border:1px solid color-mix(in srgb,var(--signal) 45%,transparent)",
+        title:(sh.label||(sh.names||[]).slice(0,3).join(", ")+((sh.names||[]).length>3?" +"+((sh.count||0)-3):""))||(sh.count+" files"),
+        meta:(sh.count+" file"+(sh.count!==1?"s":"")+" · "+(sh.downloads||0)+" download"+(sh.downloads!==1?"s":"")+" · made "+fmtWhen(sh.created)+(sh.owner&&s.admin?" by "+sh.owner:"")),
+        expiresText:"expires "+fmtUntil(sh.expires),
+        expiresColor:(sh.expires && sh.expires-Date.now()/1000<86400)?"var(--pop)":"var(--ink-soft)",
+        copyHandler:()=>copyText(location.origin+sh.url, "Link copied"),
+        revokeHandler:()=>revokeShare(sh.token),
+        initExpiry:(el)=>{ el.innerHTML='<option value="">change expiry…</option>'+EXPIRY_OPTIONS.map(o=>'<option value="'+o.v+'">'+(o.v?o.l:"forever")+'</option>').join(""); el.onchange=()=>{ if(el.value!=="") setShareExpiry(sh.token, parseInt(el.value,10)); }; },
+      })),
+      noShares:s.sharesOpen && s.shares!==null && s.shares.length===0,
       tabDev:tabStyle(s.tab==="devices"), tabAct:tabStyle(s.tab==="activity"), tabChatStyle:tabStyle(s.tab==="chat"),
       tabDevices:()=>setTab("devices"), tabActivity:()=>setTab("activity"), tabChat:()=>setTab("chat"),
       isDevices:s.tab==="devices", isActivity:s.tab==="activity", isChat:s.tab==="chat",
@@ -947,7 +1066,7 @@ x11vnc -display :0 -localhost \
       selecting:s.selecting, notSelecting:!s.selecting, toggleSelecting,
       selectLabel: s.selecting?"Done":"Select",
       selCountText: selCount()+" selected", anySelected:selCount()>0,
-      bulkDelete, bulkZip, bulkShare,
+      bulkDelete, bulkZip, bulkShare, bulkUnshare,
       query:s.query, onSearch,
       chatDraft:s.chatDraft, onChatInput, onChatKey, sendChat, chatDisabled:!s.chatDraft.trim(),
       toggleTheme, openQR, closeQR, onQrBackdrop, doLogout, changePassword,

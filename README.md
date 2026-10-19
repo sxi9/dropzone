@@ -64,6 +64,7 @@ It was built from scratch, iteration by iteration, into a genuinely full-feature
 - **Pin** important items to the top of the feed
 - **Labels/tags** with one-click filter chips — turn a flat pile of files into lightly organized storage
 - **Multi-select** with **bulk delete** and **download-selected-as-a-zip**
+- **Public-link control** — a `public` pill on every file that is in a live link, a Public filter, *Stop sharing publicly* per file or for a whole selection, a Links panel listing every link with expiry and revoke, and **timed links** (1 hour to forever) when you create one
 - **In-page previews** for images, video (seekable), audio, PDFs, and text files — no download required
 - A **storage panel** showing your largest files and one-tap cleanup ("older than 30 days," "everything unpinned")
 

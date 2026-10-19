@@ -35,6 +35,10 @@ All notable changes to this project are documented here.
 - **Copy buttons on notes and share links** now work over plain HTTP on the LAN. The Clipboard API is only available in secure contexts (HTTPS or localhost), so the old code silently did nothing while still showing "Copied". Added an `execCommand("copy")` fallback and an honest toast when the browser blocks copying.
 
 ### Shareable links
+- **See and control what is public.** Files that sit in a live public link carry a green `public` pill (a `pin` pill for PIN-protected links). Tapping it shows every link the file is in, with Copy, *Stop sharing publicly* (pulls the file out of all your no-PIN links) and *Remove from all links*. A **Public** filter in the feed shows only publicly shared files, and in multi-select a **Stop public** button does it for many files at once. Links that end up empty are deleted.
+- **Links panel** (header button): every live link you made (admins see everyone's) with public/PIN badge, files, downloads, when it was made, when it expires, Copy, a *change expiry* dropdown and *End link*.
+- **Timed links.** The share dialog asks how long the link works (1 hour, 1 day, 7 days — the default — 30 days, forever); `/api/share` takes `expires_in` seconds, `/api/share/<token>/expires` changes it later. An expired link answers 404 from that second, stops counting as public, and is swept from the table.
+- New API: `POST /api/unshare {ids, scope: public|all}`, `POST /api/share/<token>/expires {expires_in}`; `/api/state` files gain `public`, `pin_shared`, `public_until`, `links`; `/api/shares` rows gain `expires` and `ids`.
 - Share one file or a bunch of selected files with a link. **Public** links let anyone download with no password; **private** links need a PIN you set. Either way the link exposes only those files, nothing else in the app.
 - Per-file "Share" button and a "Share link" action in multi-select, each opening a public/PIN chooser that copies the link. The recipient sees a clean download page (and a zip-all for multiple files). Admins/owners can list and revoke links (/api/share, /api/shares). Download perm required to create a link.
 
