@@ -191,6 +191,8 @@ Admins get an **Admin** button in the header that opens `/admin`:
 
 ## Access from outside home with Tailscale
 
+> Operational notes for the owner's own deployment (host, ports, Funnel layout, restart recipe, past incidents) live in [docs/CLAUDE-MEMORY.md](docs/CLAUDE-MEMORY.md), a mirror of the owner's Claude memory.
+
 Dropzone never needs a port forward. Install [Tailscale](https://tailscale.com) on the host and on your phone/laptop, then either open `http://<tailscale-ip>:8000` directly, or let Tailscale terminate HTTPS for you:
 
 ```bash
