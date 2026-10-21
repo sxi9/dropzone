@@ -1185,7 +1185,10 @@ x11vnc -display :0 -localhost \
   function loadState(){
     fetch("/api/state").then(r=>{ if(r.status===401){ location.reload(); return null; } return r.json(); })
       .then(d=>{ if(!d) return;
-        const sig=JSON.stringify([d.items,d.devices,d.activity,d.chat,d.stats,d.role,d.auth,d.incoming]);
+        // NOTE: d.stats is deliberately left OUT — disk_free fluctuates every poll and would
+        // re-render the whole feed on a 2s poll (visible blinking). The storage bar still
+        // refreshes whenever items actually change.
+        const sig=JSON.stringify([d.items,d.devices,d.activity,d.chat,d.role,d.auth,d.incoming]);
         if(sig===lastSig) return;
         lastSig=sig;
         setState({ items:d.items||[], devices:d.devices||[], activity:d.activity||[], chat:d.chat||[], incoming:d.incoming||[],
