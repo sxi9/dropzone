@@ -756,13 +756,13 @@ x11vnc -display :0 -localhost \
   function setLabelFilter(l){ setState({labelFilter: state.labelFilter===l ? "" : l}); }
   function makeShare(ids){
     ids=(ids||[]).filter(Boolean);
-    if(!ids.length){ toast("Select files to share"); return; }
+    if(!ids.length){ toast("Select items to share"); return; }
     const wrap=document.createElement("div");
-    wrap.style.cssText="position:fixed;inset:0;background:rgba(10,18,28,.5);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);display:grid;place-items:center;padding:20px;z-index:120";
+    wrap.className="dz-overlay"; wrap.style.cssText="position:fixed;inset:0;background:rgba(10,18,28,.5);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);display:grid;place-items:center;padding:20px;z-index:120";
     wrap.onclick=e=>{ if(e.target===wrap) wrap.remove(); };
     wrap.innerHTML='<div style="background:var(--paper-solid);border:1px solid var(--line);border-radius:18px;padding:22px;width:370px;max-width:92vw;box-shadow:var(--shadow)">'
-      +'<h3 style="margin:0 0 4px;font-size:17px">Share '+ids.length+' file'+(ids.length>1?"s":"")+'</h3>'
-      +'<p style="margin:0 0 16px;color:var(--ink-soft);font-size:13px">Anyone with the link can download only '+(ids.length>1?"these files":"this file")+', nothing else.</p>'
+      +'<h3 style="margin:0 0 4px;font-size:17px">Share '+ids.length+' item'+(ids.length>1?"s":"")+'</h3>'
+      +'<p style="margin:0 0 16px;color:var(--ink-soft);font-size:13px">Anyone with the link can open only '+(ids.length>1?"these items":"this item")+', nothing else.</p>'
       +'<label style="display:flex;align-items:center;gap:9px;font-size:14px;margin-bottom:10px;cursor:pointer"><input type="radio" name="sm" value="public" checked style="width:16px;height:16px"> Public — no password</label>'
       +'<label style="display:flex;align-items:center;gap:9px;font-size:14px;cursor:pointer"><input type="radio" name="sm" value="pin" style="width:16px;height:16px"> Private — needs a PIN</label>'
       +'<input id="sm-pin" type="text" autocomplete="off" placeholder="Set a PIN (3-32 characters)" style="width:100%;font-size:14px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--ink);box-sizing:border-box;display:none;margin:8px 0 0">'
@@ -792,7 +792,7 @@ x11vnc -display :0 -localhost \
       }catch(e){ toast("Couldn't create link"); }
     };
   }
-  function bulkShare(){ const fids=Object.keys(state.selected).filter(k=>k.indexOf("file:")===0).map(k=>k.slice(5)); makeShare(fids); }
+  function bulkShare(){ const ids=Object.keys(state.selected).map(k=>k.slice(k.indexOf(":")+1)); if(!ids.length){ toast("Select items first"); return; } makeShare(ids); }
 
   // ---------------------------------------------------------------- v7: public-link management
   const EXPIRY_OPTIONS=[{v:3600,l:"1 hour"},{v:86400,l:"1 day"},{v:604800,l:"7 days"},{v:2592000,l:"30 days"},{v:0,l:"forever"}];
@@ -821,7 +821,7 @@ x11vnc -display :0 -localhost \
   function publicMenu(it){
     const links=(it.links||[]);
     const wrap=document.createElement("div");
-    wrap.style.cssText="position:fixed;inset:0;background:rgba(10,18,28,.5);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);display:grid;place-items:center;padding:20px;z-index:120";
+    wrap.className="dz-overlay"; wrap.style.cssText="position:fixed;inset:0;background:rgba(10,18,28,.5);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);display:grid;place-items:center;padding:20px;z-index:120";
     wrap.onclick=e=>{ if(e.target===wrap) wrap.remove(); };
     const rows=links.map(l=>'<div style="display:flex;align-items:center;gap:8px;padding:9px 0;border-top:1px solid var(--line-soft)">'
       +'<span style="font-family:ui-monospace,Menlo,monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:2px 7px;border-radius:999px;'+(l.public?"color:#06231f;background:var(--signal)":"color:var(--signal);border:1px solid color-mix(in srgb,var(--signal) 45%,transparent)")+'">'+(l.public?"public":"pin")+'</span>'
@@ -1185,6 +1185,7 @@ x11vnc -display :0 -localhost \
   function loadState(){
     fetch("/api/state").then(r=>{ if(r.status===401){ location.reload(); return null; } return r.json(); })
       .then(d=>{ if(!d) return;
+        if(state.selecting || document.querySelector(".dz-overlay")) return;
         // NOTE: d.stats is deliberately left OUT — disk_free fluctuates every poll and would
         // re-render the whole feed on a 2s poll (visible blinking). The storage bar still
         // refreshes whenever items actually change.

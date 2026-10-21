@@ -1755,6 +1755,7 @@ def _parse_expires_in(value):
     return time.time() + min(max(n, 60), 365*86400)
 
 def _share_files(rec):
+    """Only the file rows in a share (used by zip/download)."""
     try: ids = json.loads(rec["ids"])
     except (ValueError, TypeError): ids = []
     out = []
@@ -1763,6 +1764,19 @@ def _share_files(rec):
             r = conn.execute("SELECT * FROM files WHERE id=?", (fid,)).fetchone()
             if r: out.append(r)
     return out
+
+def _share_items(rec):
+    """Files and notes in a share, in the stored order."""
+    try: ids = json.loads(rec["ids"])
+    except (ValueError, TypeError): ids = []
+    files, notes = [], []
+    with db() as conn:
+        for sid in ids:
+            r = conn.execute("SELECT * FROM files WHERE id=?", (sid,)).fetchone()
+            if r: files.append(r); continue
+            r = conn.execute("SELECT * FROM notes WHERE id=?", (sid,)).fetchone()
+            if r: notes.append(r)
+    return files, notes
 
 @app.route("/api/share", methods=["POST"])
 @require_perm("download")
@@ -1775,12 +1789,15 @@ def api_share_create():
     me = client_ip()
     good = []
     with db() as conn:
-        for fid in ids[:100]:
-            r = conn.execute("SELECT * FROM files WHERE id=?", (fid,)).fetchone()
+        for sid in ids[:100]:
+            r = conn.execute("SELECT id, owner_ip, target_ip FROM files WHERE id=?", (sid,)).fetchone()
             if r and visible(r, me):
-                good.append(r["id"])
+                good.append(sid); continue
+            r = conn.execute("SELECT id, owner_ip, target_ip FROM notes WHERE id=? AND burn=0", (sid,)).fetchone()
+            if r and visible(r, me):
+                good.append(sid)
     if not good:
-        return jsonify(error="no shareable files selected"), 400
+        return jsonify(error="nothing shareable selected (burn-after-read notes can't be shared)"), 400
     if pin and (len(pin) < 3 or len(pin) > 32):
         return jsonify(error="PIN must be 3-32 characters"), 400
     token = secrets.token_urlsafe(9)
@@ -1870,7 +1887,12 @@ def api_shares_list():
             if not admin and r["owner_user"] != me: continue
             try: ids = json.loads(r["ids"])
             except (ValueError, TypeError): ids = []
-            names = [x["name"] for x in (conn.execute("SELECT name FROM files WHERE id=?", (i,)).fetchone() for i in ids) if x]
+            names = []
+            for i in ids:
+                fr = conn.execute("SELECT name FROM files WHERE id=?", (i,)).fetchone()
+                if fr: names.append(fr["name"]); continue
+                nr = conn.execute("SELECT content FROM notes WHERE id=?", (i,)).fetchone()
+                if nr: names.append("text: " + (nr["content"] or "")[:24])
             if r["expires"] and r["expires"] < time.time(): continue   # v7: dead links never list
             out.append({"token": r["token"], "url": url_for("share_page", token=r["token"], _external=False),
                         "public": not r["pin_hash"], "count": len(ids), "names": names[:8], "ids": ids,
@@ -1917,13 +1939,14 @@ def share_page(token):
                                 httponly=True, samesite="Lax", secure=request.is_secure, path="/s/" + token)
                 return resp
             login_failed("share:" + token + ip); time.sleep(0.3); error = "Wrong PIN."
-    files = _share_files(rec)
+    files, notes = _share_items(rec)
     unlocked = _share_unlocked(token, rec)
     view = [{"id": f["id"], "name": f["name"], "size": f["size"], "is_image": (f["mime"] or "") in IMAGE_MIMES,
              "dl": url_for("share_download", token=token, fid=f["id"])} for f in files]
+    noteview = [{"content": (n["content"] or "")} for n in notes]
     return render_template("share.html", token=token, locked=(bool(rec["pin_hash"]) and not unlocked),
-                           error=error, files=view, count=len(view),
-                           zip_url=url_for("share_zip", token=token),
+                           error=error, files=view, notes=noteview, count=len(view) + len(noteview),
+                           nfiles=len(view), zip_url=url_for("share_zip", token=token),
                            total=sum((f["size"] or 0) for f in files))
 
 @app.route("/s/<token>/dl/<fid>")

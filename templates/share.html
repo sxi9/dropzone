@@ -39,7 +39,7 @@
         <div class="err">{{ error or "" }}</div>
       </form>
     {% else %}
-      <h1>{{ count }} shared file{{ 's' if count != 1 else '' }}</h1>
+      <h1>{{ count }} shared item{{ 's' if count != 1 else '' }}</h1>
       <p class="sub">Shared with you via Dropzone. Download below.</p>
       {% for f in files %}
       <div class="row">
@@ -48,7 +48,13 @@
         <a class="dl" href="{{ f.dl }}">Download</a>
       </div>
       {% endfor %}
-      {% if count > 1 %}<a class="all" href="{{ zip_url }}">Download all as .zip</a>{% endif %}
+      {% for n in notes %}
+      <div style="border:1px solid var(--line);border-radius:13px;padding:12px 14px;margin-bottom:9px;position:relative">
+        <pre style="margin:0;white-space:pre-wrap;word-break:break-word;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;line-height:1.55;color:var(--ink);max-height:300px;overflow:auto">{{ n.content }}</pre>
+        <button onclick="navigator.clipboard&&navigator.clipboard.writeText(this.previousElementSibling.textContent)" style="position:absolute;top:8px;right:8px;border:1px solid var(--line);background:var(--paper);color:var(--ink-soft);font-size:11px;padding:4px 9px;border-radius:8px;cursor:pointer">Copy</button>
+      </div>
+      {% endfor %}
+      {% if nfiles > 1 %}<a class="all" href="{{ zip_url }}">Download all files as .zip</a>{% endif %}
     {% endif %}
   </div>
   <div class="foot">Only the shared file{{ 's' if count != 1 else '' }} above are accessible through this link.</div>
