@@ -9,16 +9,6 @@ changes; the memory and this file should say the same thing.
 
 _User's self-hosted Dropzone LAN file-share app: Ubuntu host 192.168.29.22, repo github.com/sxi9/dropzone, deploy path and how to restart without sudo_
 
----
-name: dropzone-server
-description: "User's self-hosted Dropzone LAN file-share app: Ubuntu host 192.168.29.22, repo github.com/sxi9/dropzone, deploy path and how to restart without sudo"
-metadata:
-  node_type: memory
-  type: project
-  originSessionId: 99a3111e-bf4a-4fbb-b22d-17bc6e24066c
-  modified: 2026-10-13T10:12:32.095Z
----
-
 Dropzone is the user's Flask LAN file/text share app (repo https://github.com/sxi9/dropzone, only branch and default branch is `claude/github-publishing-35uwrc`, local clone D:\physical_ai\dropzone). It runs on an Ubuntu laptop at http://192.168.29.22:8000 (hostname saibalasundram is the WSL box, NOT this one). SSH works with the user's existing key as `saibala@192.168.29.22` (no passwordless sudo). Deployed folder `~/Downloads/dropzone` is a plain copy, not a git checkout; data lives in `~/Downloads/dropzone/data` (3.4 GB of uploads + dropzone.db, must never be touched). Service `dropzone` has Restart=always, so `pkill -u saibala -f app.py` restarts it without sudo (don't match the ssh command line itself). Deploy = `git archive HEAD | ssh ... tar -x -C ~/Downloads/dropzone`.
 
 On 2026-10-13 v6 was deployed: admin/user accounts (`venv/bin/python app.py set-password admin|user`), ticket-authenticated websockify bridge, hardening. Backup of the old v4 code: `~/Downloads/dropzone.bak-v4-20261013-1540`. Tailscale on the host: node `leakwatch`, IP 100.77.103.75, DNS leakwatch.tail765a4c.ts.net; Dropzone is reachable tailnet-wide at http://100.77.103.75:8000 (no sudo needed). `tailscale serve` needs sudo (or `sudo tailscale set --operator=saibala` once). A Funnel on that node already publishes port 8787 (unrelated 'leakwatch' app) to the public internet. The user plans to host it over Tailscale (README has the section; needs DROPZONE_HTTPS=1 and DROPZONE_TRUST_PROXY=1 behind `tailscale serve`).
